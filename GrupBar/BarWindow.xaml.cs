@@ -105,7 +105,6 @@ public partial class BarWindow : AppBarWindow
     private bool _recomposeToggle;
     private readonly SolidColorBrush _tintBrush = new(TintOnDark);
     private Color _tintTarget = TintOnDark;
-    private bool _barHidden;
     private bool _fullScreenOnThisBar;
     private bool _cursorInBarZone;
     private bool _startMenuVisible;
@@ -217,7 +216,7 @@ public partial class BarWindow : AppBarWindow
 
     private void GlassTimer_Tick(object? sender, EventArgs e)
     {
-        if (_barHidden || _fullScreenOnThisBar)
+        if (IsIslandOffScreen() || _fullScreenOnThisBar)
         {
             return;
         }
@@ -252,7 +251,7 @@ public partial class BarWindow : AppBarWindow
         }
 
         // Ada ekran dışındaysa hariç tutmaya gerek yok.
-        IntPtr exclude = _barHidden ? IntPtr.Zero : Handle;
+        IntPtr exclude = IsIslandOffScreen() ? IntPtr.Zero : Handle;
 
         _glassBusy = true;
         try
@@ -311,6 +310,18 @@ public partial class BarWindow : AppBarWindow
 
         _tintTarget = target;
         _tintBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(target, TimeSpan.FromMilliseconds(350)));
+    }
+
+    /// <summary>
+    /// Gerçek konuma bakar. Animasyon olaylarından tutulan bir bayrak güvenilir değil: gizlenme yarıda
+    /// kesilince tamamlandı olayı yine de gelebiliyor, ada ekrandayken gizli sanılıyor.
+    /// </summary>
+    private bool IsIslandOffScreen()
+    {
+        var slide = (TranslateTransform)BarRoot.RenderTransform;
+        return Orientation == Orientation.Horizontal
+            ? Math.Abs(slide.Y) >= DesiredHeight
+            : Math.Abs(slide.X) >= DesiredWidth;
     }
 
     private bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
@@ -388,18 +399,10 @@ public partial class BarWindow : AppBarWindow
         base.OnAutoHideAnimationBegin(isHiding);
 
         // Açılırken arkası taze olsun; ada henüz ekran dışında, görüntüye karışmaz.
-        if (!isHiding && _barHidden)
+        if (!isHiding && IsIslandOffScreen())
         {
             RefreshGlass();
         }
-        _barHidden = false;
-    }
-
-    protected override void OnAutoHideAnimationComplete(bool isHiding)
-    {
-        base.OnAutoHideAnimationComplete(isHiding);
-
-        _barHidden = isHiding;
     }
 
     protected override void OnFullScreenEnter(FullScreenApp app)
