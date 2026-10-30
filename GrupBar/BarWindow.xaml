@@ -297,6 +297,109 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!-- Birden çok pencere: göstergenin yanında küçük bir nokta -->
+        <Style x:Key="WindowIndicatorMore" TargetType="Border">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="Height" Value="3" />
+            <Setter Property="CornerRadius" Value="1.5" />
+            <Setter Property="Background" Value="#B0FFFFFF" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,0,1" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <TranslateTransform X="11" />
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Visibility" Value="{Binding HasMany, Converter={StaticResource BoolToVisibility}}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Top}">
+                    <Setter Property="VerticalAlignment" Value="Top" />
+                    <Setter Property="Margin" Value="0,1,0,0" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Left}">
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="HorizontalAlignment" Value="Left" />
+                    <Setter Property="Margin" Value="1,0,0,0" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="11" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Right}">
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="HorizontalAlignment" Value="Right" />
+                    <Setter Property="Margin" Value="0,0,1,0" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="11" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Pencere önizlemesi -->
+        <Style x:Key="PreviewClose" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Visibility" Value="Hidden" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="5">
+                            <Path Data="M0,0 L8,8 M8,0 L0,8"
+                                  Stroke="{StaticResource TextPrimary}"
+                                  StrokeThickness="1.3"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="#E0D8344A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PreviewTile" TargetType="Button">
+            <Setter Property="Width" Value="216" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Padding="8,6,8,8" Background="{TemplateBinding Background}" CornerRadius="11">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static tasks:ApplicationWindow+WindowState.Active}">
+                    <Setter Property="Background" Value="{StaticResource ActiveBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <DataTemplate x:Key="TrayIconTemplate">
             <Border Padding="5"
                     CornerRadius="8"
@@ -652,12 +755,14 @@
                             <Grid>
                                 <Button Style="{StaticResource TaskButton}"
                                         AutomationProperties.Name="{Binding Title}"
-                                        ToolTip="{Binding Title}"
                                         PreviewMouseLeftButtonDown="TaskButton_PreviewMouseLeftButtonDown"
+                                        MouseEnter="TaskButton_MouseEnter"
+                                        MouseLeave="TaskButton_MouseLeave"
+                                        ContextMenuOpening="TaskButton_ContextMenuOpening"
                                         Click="TaskButton_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
-                                            <MenuItem Header="Pencereyi kapat" Click="CloseTaskItem_Click" />
+                                            <MenuItem Header="{Binding CloseLabel}" Click="CloseTaskItem_Click" />
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Image Source="{Binding Icon}"
@@ -669,6 +774,7 @@
                                         <ScaleTransform ScaleX="0.3" />
                                     </Border.RenderTransform>
                                 </Border>
+                                <Border Style="{StaticResource WindowIndicatorMore}" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -699,6 +805,57 @@
                                 <WrapPanel />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </local:GlassCard>
+            </Border>
+        </Popup>
+
+        <!-- Çubuktaki uygulamanın üzerine gelince pencerelerinin canlı önizlemesi -->
+        <Popup x:Name="PreviewPopup"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               Opened="Popup_OpenedOrClosed"
+               Closed="Popup_OpenedOrClosed">
+            <Border Padding="20">
+                <local:GlassCard x:Name="PreviewCard"
+                                 Padding="4"
+                                 AllowDrop="False"
+                                 SizeChanged="PopupCard_SizeChanged"
+                                 MouseEnter="PreviewCard_MouseEnter"
+                                 MouseLeave="PreviewCard_MouseLeave"
+                                 CornerRadius="15">
+                    <ItemsControl ItemsSource="{Binding Windows}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource PreviewTile}"
+                                        AutomationProperties.Name="{Binding Title}"
+                                        Click="PreviewTile_Click">
+                                    <DockPanel>
+                                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                            <Image DockPanel.Dock="Left" Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,6,0" />
+                                            <Button DockPanel.Dock="Right"
+                                                    Style="{StaticResource PreviewClose}"
+                                                    AutomationProperties.Name="Pencereyi kapat"
+                                                    Click="PreviewClose_Click" />
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <Grid Height="112">
+                                            <!-- Küçük resim gelmezse (ya da yüklenirken) uygulamanın ikonu görünür -->
+                                            <Image Source="{Binding Icon}" Width="32" Height="32" Opacity="0.5" />
+                                            <local:WindowThumbnail SourceWindow="{Binding Handle}" />
+                                        </Grid>
+                                    </DockPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </local:GlassCard>
             </Border>

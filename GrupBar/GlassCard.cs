@@ -26,6 +26,7 @@ public class GlassCard : ContentControl
     private WriteableBitmap? _bitmap;
     private Color _tintTarget = GlassTint.OnDark;
     private bool _busy;
+    private bool _refreshAgain;
     private bool _recomposeToggle;
 
     public CornerRadius CornerRadius
@@ -70,6 +71,8 @@ public class GlassCard : ContentControl
     {
         if (_busy)
         {
+            // Kart yer değiştirmiş olabilir; bitince yeniden al.
+            _refreshAgain = true;
             return;
         }
 
@@ -106,6 +109,12 @@ public class GlassCard : ContentControl
 
             // Görüntü hiç alınamadıysa (eski Windows) kart okunabilir kalsın.
             _fallback!.Visibility = _bitmap == null ? Visibility.Visible : Visibility.Collapsed;
+
+            if (_refreshAgain)
+            {
+                _refreshAgain = false;
+                _ = RefreshGlassAsync(animateTint);
+            }
         }
     }
 

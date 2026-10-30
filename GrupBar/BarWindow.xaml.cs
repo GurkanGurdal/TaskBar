@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -35,6 +37,12 @@ public partial class BarWindow : AppBarWindow
     private const double TintSampleDistance = 24;
     private const double TintSampleLength = 40;
     private const double PanelShadowMargin = 20;
+    private const int PreviewShowDelayMs = 350;
+    private const int PreviewHideDelayMs = 250;
+
+    /// <summary>Bir önizleme kutusunun kenar boşluğuyla birlikte kapladığı yer (<c>PreviewTile</c>).</summary>
+    private const double PreviewTileWidth = 220;
+    private const double PreviewTileHeight = 170;
     private const double CompactThickness = 36;
     private const double EdgeRevealDepth = 2;
 
@@ -86,7 +94,12 @@ public partial class BarWindow : AppBarWindow
     private IntPtr _windowsTray;
     private AppGroup? _panelGroup;
     private bool _startMenuWasOpen;
-    private ApplicationWindow.WindowState? _pressedTaskState;
+    private readonly ObservableCollection<TaskGroup> _taskGroups = new();
+    private TaskGroup? _pressedTaskGroup;
+    private ApplicationWindow? _pressedActiveWindow;
+    private readonly DispatcherTimer _previewShowTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewShowDelayMs) };
+    private readonly DispatcherTimer _previewHideTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewHideDelayMs) };
+    private Button? _previewButton;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -123,7 +136,11 @@ public partial class BarWindow : AppBarWindow
         // Her çubuk kendi ekranındaki pencereleri gösterir; pencere taşınınca düğmesi de taşınır.
         _taskWindows = shellManager.Tasks.CreateGroupedWindowsCollection();
         _taskWindows.Filter = item => item is ApplicationWindow { ShowInTaskbar: true } window && window.HMonitor == Screen.HMonitor;
-        TaskList.ItemsSource = _taskWindows;
+        ((INotifyCollectionChanged)_taskWindows).CollectionChanged += TaskWindows_CollectionChanged;
+        TaskList.ItemsSource = _taskGroups;
+        SyncTaskGroups();
+        _previewShowTimer.Tick += PreviewShowTimer_Tick;
+        _previewHideTimer.Tick += PreviewHideTimer_Tick;
 
         // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
         if (Screen.Primary)
@@ -235,13 +252,12 @@ public partial class BarWindow : AppBarWindow
             _glassIdleTicks = 0;
             RefreshGlass();
 
-            if (GroupPanel.IsOpen)
+            foreach ((Popup popup, GlassCard card) in new[] { (GroupPanel, PanelCard), (TrayPopup, TrayCard), (PreviewPopup, PreviewCard) })
             {
-                _ = PanelCard.RefreshGlassAsync(animateTint: true);
-            }
-            else if (TrayPopup.IsOpen)
-            {
-                _ = TrayCard.RefreshGlassAsync(animateTint: true);
+                if (popup.IsOpen)
+                {
+                    _ = card.RefreshGlassAsync(animateTint: true);
+                }
             }
         }
     }
@@ -408,7 +424,7 @@ public partial class BarWindow : AppBarWindow
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
         return base.ShouldAllowAutoHide() && !_cursorInBarZone && GroupPanel?.IsOpen != true && TrayPopup?.IsOpen != true
-            && !(_startMenuVisible && Screen.Primary);
+            && PreviewPopup?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
     }
 
     private async void Popup_OpenedOrClosed(object? sender, EventArgs e)
@@ -416,12 +432,13 @@ public partial class BarWindow : AppBarWindow
         OnPropertyChanged(nameof(AllowAutoHide));
 
         var popup = (Popup)sender!;
-        GlassCard card = popup == GroupPanel ? PanelCard : TrayCard;
+        GlassCard card = popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : PreviewCard;
 
         if (!popup.IsOpen)
         {
             // Bir sonraki açılışta eski görüntü bir an görünmesin.
             card.BeginAnimation(OpacityProperty, null);
+            WindowThumbnail.SetIsShown(card, false);
             return;
         }
 
@@ -430,7 +447,9 @@ public partial class BarWindow : AppBarWindow
 
         if (popup.IsOpen)
         {
-            AnimatePopupIn(card, popup == GroupPanel ? PanelScale : TrayScale);
+            // Küçük resimleri Windows çizer, WPF ölçeklemesi onlara işlemez; önizleme yalnızca solarak gelir.
+            AnimatePopupIn(card, popup == GroupPanel ? PanelScale : popup == TrayPopup ? TrayScale : null);
+            WindowThumbnail.SetIsShown(card, true);
         }
     }
 
@@ -749,7 +768,15 @@ public partial class BarWindow : AppBarWindow
         _autoHideTimer.Stop();
         _glassTimer.Stop();
 
+        _previewShowTimer.Stop();
+        _previewHideTimer.Stop();
+
         TaskList.ItemsSource = null;
+        ((INotifyCollectionChanged)_taskWindows).CollectionChanged -= TaskWindows_CollectionChanged;
+        foreach (TaskGroup group in _taskGroups)
+        {
+            group.Detach();
+        }
         (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();
         TrayList.ItemsSource = null;
         TrayOverflowList.ItemsSource = null;
@@ -924,38 +951,222 @@ public partial class BarWindow : AppBarWindow
     #endregion
 
     #region Running windows
+    private void TaskWindows_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        SyncTaskGroups();
+    }
+
+    private void SyncTaskGroups()
+    {
+        var windowsByKey = new Dictionary<string, List<ApplicationWindow>>();
+        foreach (ApplicationWindow window in _taskWindows.OfType<ApplicationWindow>())
+        {
+            string key = TaskGroup.KeyOf(window);
+            if (!windowsByKey.TryGetValue(key, out List<ApplicationWindow>? windows))
+            {
+                windowsByKey[key] = windows = new List<ApplicationWindow>();
+            }
+            windows.Add(window);
+        }
+
+        // Düğmeler yer değiştirmesin: var olan gruplar yerinde kalır, yeniler sona eklenir.
+        foreach (TaskGroup group in _taskGroups.Where(group => !windowsByKey.ContainsKey(group.Key)).ToList())
+        {
+            group.Detach();
+            _taskGroups.Remove(group);
+        }
+
+        foreach ((string key, List<ApplicationWindow> windows) in windowsByKey)
+        {
+            TaskGroup? group = _taskGroups.FirstOrDefault(existing => existing.Key == key);
+            if (group == null)
+            {
+                group = new TaskGroup(key);
+                _taskGroups.Add(group);
+            }
+            group.SetWindows(windows);
+        }
+
+        if (PreviewPopup.IsOpen)
+        {
+            if (PreviewPopup.DataContext is TaskGroup { Windows.Count: > 0 } shown)
+            {
+                SizePreviewCard(shown);
+            }
+            else
+            {
+                HidePreview();
+            }
+        }
+    }
+
     private void TaskButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         // Çubuğa tıklamak pencereyi etkin olmaktan çıkarabilir; basıldığı andaki durumu sakla.
-        _pressedTaskState = WindowOf(sender).State;
+        _pressedTaskGroup = GroupOfTask(sender);
+        _pressedActiveWindow = _pressedTaskGroup.ActiveWindow;
     }
 
     private void TaskButton_Click(object sender, RoutedEventArgs e)
     {
-        ApplicationWindow window = WindowOf(sender);
-        ApplicationWindow.WindowState state = _pressedTaskState ?? window.State;
-        _pressedTaskState = null;
+        TaskGroup group = GroupOfTask(sender);
+        ApplicationWindow? active = _pressedTaskGroup == group ? _pressedActiveWindow : group.ActiveWindow;
+        _pressedTaskGroup = null;
+        _pressedActiveWindow = null;
 
         ClosePanel();
 
-        if (state == ApplicationWindow.WindowState.Active && window.CanMinimize)
+        if (group.HasMany)
         {
-            window.Minimize();
+            group.NextWindow(active).BringToFront();
+        }
+        else if (active is { CanMinimize: true })
+        {
+            active.Minimize();
         }
         else
         {
-            window.BringToFront();
+            group.Windows[0].BringToFront();
         }
     }
 
     private void CloseTaskItem_Click(object sender, RoutedEventArgs e)
     {
-        WindowOf(sender).Close();
+        foreach (ApplicationWindow window in GroupOfTask(sender).Windows.ToList())
+        {
+            window.Close();
+        }
     }
 
-    private static ApplicationWindow WindowOf(object sender)
+    private static TaskGroup GroupOfTask(object sender)
     {
-        return (ApplicationWindow)((FrameworkElement)sender).DataContext;
+        return (TaskGroup)((FrameworkElement)sender).DataContext;
+    }
+    #endregion
+
+    #region Window preview
+    private void TaskButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        var button = (Button)sender;
+        _previewHideTimer.Stop();
+
+        if (GroupPanel.IsOpen || TrayPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        {
+            return;
+        }
+
+        _previewButton = button;
+
+        // Önizleme açıksa düğmeler arasında gezinirken beklemeden geçsin.
+        if (PreviewPopup.IsOpen)
+        {
+            ShowPreview(button);
+        }
+        else
+        {
+            _previewShowTimer.Start();
+        }
+    }
+
+    private void TaskButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _previewShowTimer.Stop();
+
+        if (PreviewPopup.IsOpen)
+        {
+            _previewHideTimer.Start();
+        }
+    }
+
+    private void TaskButton_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        HidePreview();
+    }
+
+    private void PreviewCard_MouseEnter(object sender, MouseEventArgs e)
+    {
+        _previewHideTimer.Stop();
+    }
+
+    private void PreviewCard_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _previewHideTimer.Start();
+    }
+
+    private void PreviewShowTimer_Tick(object? sender, EventArgs e)
+    {
+        _previewShowTimer.Stop();
+
+        if (_previewButton is { IsMouseOver: true } button)
+        {
+            ShowPreview(button);
+        }
+    }
+
+    private void PreviewHideTimer_Tick(object? sender, EventArgs e)
+    {
+        HidePreview();
+    }
+
+    private void ShowPreview(Button button)
+    {
+        TaskGroup group = GroupOfTask(button);
+
+        PreviewPopup.DataContext = group;
+        PreviewPopup.PlacementTarget = button;
+        SizePreviewCard(group);
+        PlacePopup(PreviewPopup, PreviewCard);
+
+        if (PreviewPopup.IsOpen)
+        {
+            _ = PreviewCard.RefreshGlassAsync(animateTint: true);
+        }
+        else
+        {
+            PreviewPopup.IsOpen = true;
+        }
+    }
+
+    private void HidePreview()
+    {
+        _previewShowTimer.Stop();
+        _previewHideTimer.Stop();
+        _previewButton = null;
+        PreviewPopup.IsOpen = false;
+    }
+
+    private void SizePreviewCard(TaskGroup group)
+    {
+        // Yatay çubukta yan yana, yan çubukta alt alta; ekrana sığmayan alt satıra (sütuna) geçer.
+        double margin = 2 * (PanelShadowMargin + PreviewCard.Padding.Left);
+        int count = group.Windows.Count;
+        int columns;
+        if (Orientation == Orientation.Horizontal)
+        {
+            double room = Screen.Bounds.Width / DpiScale - margin;
+            columns = Math.Clamp(count, 1, Math.Max(1, (int)(room / PreviewTileWidth)));
+        }
+        else
+        {
+            double room = Screen.Bounds.Height / DpiScale - margin;
+            int rows = Math.Max(1, (int)(room / PreviewTileHeight));
+            columns = (int)Math.Ceiling(count / (double)rows);
+        }
+
+        PreviewCard.Width = columns * PreviewTileWidth + 2 * PreviewCard.Padding.Left;
+    }
+
+    private void PreviewTile_Click(object sender, RoutedEventArgs e)
+    {
+        var window = (ApplicationWindow)((FrameworkElement)sender).DataContext;
+        ClosePanel();
+        window.BringToFront();
+    }
+
+    private void PreviewClose_Click(object sender, RoutedEventArgs e)
+    {
+        ((ApplicationWindow)((FrameworkElement)sender).DataContext).Close();
+        e.Handled = true;
     }
     #endregion
 
@@ -1008,14 +1219,25 @@ public partial class BarWindow : AppBarWindow
         {
             PlacePopup(GroupPanel, PanelCard);
         }
-        else
+        else if (sender == TrayCard)
         {
             PlacePopup(TrayPopup, TrayCard);
         }
+        else
+        {
+            PlacePopup(PreviewPopup, PreviewCard);
+        }
     }
 
-    private void AnimatePopupIn(FrameworkElement card, ScaleTransform scale)
+    private void AnimatePopupIn(FrameworkElement card, ScaleTransform? scale)
     {
+        card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(130)));
+
+        if (scale == null)
+        {
+            return;
+        }
+
         var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
         var duration = TimeSpan.FromMilliseconds(200);
 
@@ -1026,7 +1248,6 @@ public partial class BarWindow : AppBarWindow
             AppBarEdge.Right => new Point(1, 0.5),
             _ => new Point(0.5, 1)
         };
-        card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(130)));
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.92, 1, duration) { EasingFunction = ease });
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.92, 1, duration) { EasingFunction = ease });
     }
@@ -1042,6 +1263,7 @@ public partial class BarWindow : AppBarWindow
     {
         GroupPanel.IsOpen = false;
         TrayPopup.IsOpen = false;
+        HidePreview();
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)
