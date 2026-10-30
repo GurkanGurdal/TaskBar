@@ -32,14 +32,8 @@ public partial class BarWindow : AppBarWindow
     private const double ShadowBleed = 8;
     private const double GlassChangeThreshold = 0.004;
     private const int GlassMaxIdleTicks = 75;
-    private const double TintDarkLuminance = 0.2;
-    private const double TintBrightLuminance = 0.6;
     private const double TintSampleDistance = 24;
     private const double TintSampleLength = 40;
-
-    // Bulanık görüntünün üstündeki ton: koyuda hafif aydınlık, parlakta yazı okunacak kadar koyu.
-    private static readonly Color TintOnDark = Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF);
-    private static readonly Color TintOnBright = Color.FromArgb(0x88, 0x10, 0x11, 0x14);
     private const double PanelShadowMargin = 20;
     private const double CompactThickness = 36;
     private const double EdgeRevealDepth = 2;
@@ -103,8 +97,8 @@ public partial class BarWindow : AppBarWindow
     private int _glassIdleTicks;
     private bool _glassBusy;
     private bool _recomposeToggle;
-    private readonly SolidColorBrush _tintBrush = new(TintOnDark);
-    private Color _tintTarget = TintOnDark;
+    private readonly SolidColorBrush _tintBrush = new(GlassTint.OnDark);
+    private Color _tintTarget = GlassTint.OnDark;
     private bool _fullScreenOnThisBar;
     private bool _cursorInBarZone;
     private bool _startMenuVisible;
@@ -240,6 +234,15 @@ public partial class BarWindow : AppBarWindow
             _glassSignature = signature;
             _glassIdleTicks = 0;
             RefreshGlass();
+
+            if (GroupPanel.IsOpen)
+            {
+                _ = PanelCard.RefreshGlassAsync(animateTint: true);
+            }
+            else if (TrayPopup.IsOpen)
+            {
+                _ = TrayCard.RefreshGlassAsync(animateTint: true);
+            }
         }
     }
 
@@ -287,23 +290,16 @@ public partial class BarWindow : AppBarWindow
 
     private void ShowGlassFrame(GlassFrame frame)
     {
-        if (_glassBitmap == null || _glassBitmap.PixelWidth != frame.Width || _glassBitmap.PixelHeight != frame.Height)
-        {
-            _glassBitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr32, null);
-            GlassBrush.ImageSource = _glassBitmap;
-        }
-
-        _glassBitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Pixels, frame.Width * 4, 0);
+        GlassCard.Show(frame, ref _glassBitmap, GlassBrush);
         ApplyTint(frame.Luminance);
     }
 
     private void ApplyTint(double luminance)
     {
         // Koyu arka planda cam hafifçe aydınlatır, parlakta koyulaşır; beyaz yazı her zaman okunsun.
-        double t = Math.Clamp((luminance - TintDarkLuminance) / (TintBrightLuminance - TintDarkLuminance), 0, 1);
-        Color target = Lerp(TintOnDark, TintOnBright, t);
+        Color target = GlassTint.For(luminance);
 
-        if (ColorDistance(target, _tintTarget) < 6)
+        if (GlassTint.IsNear(target, _tintTarget))
         {
             return;
         }
@@ -380,20 +376,6 @@ public partial class BarWindow : AppBarWindow
         return total;
     }
 
-    private static Color Lerp(Color from, Color to, double t)
-    {
-        return Color.FromArgb(
-            (byte)(from.A + (to.A - from.A) * t),
-            (byte)(from.R + (to.R - from.R) * t),
-            (byte)(from.G + (to.G - from.G) * t),
-            (byte)(from.B + (to.B - from.B) * t));
-    }
-
-    private static int ColorDistance(Color a, Color b)
-    {
-        return Math.Abs(a.A - b.A) + Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
-    }
-
     protected override void OnAutoHideAnimationBegin(bool isHiding)
     {
         base.OnAutoHideAnimationBegin(isHiding);
@@ -429,18 +411,27 @@ public partial class BarWindow : AppBarWindow
             && !(_startMenuVisible && Screen.Primary);
     }
 
-    private void Popup_OpenedOrClosed(object? sender, EventArgs e)
+    private async void Popup_OpenedOrClosed(object? sender, EventArgs e)
     {
-        if (GroupPanel.IsOpen && sender == GroupPanel)
+        OnPropertyChanged(nameof(AllowAutoHide));
+
+        var popup = (Popup)sender!;
+        GlassCard card = popup == GroupPanel ? PanelCard : TrayCard;
+
+        if (!popup.IsOpen)
         {
-            AnimatePopupIn(PanelCard, PanelScale);
-        }
-        else if (TrayPopup.IsOpen && sender == TrayPopup)
-        {
-            AnimatePopupIn(TrayCard, TrayScale);
+            // Bir sonraki açılışta eski görüntü bir an görünmesin.
+            card.BeginAnimation(OpacityProperty, null);
+            return;
         }
 
-        OnPropertyChanged(nameof(AllowAutoHide));
+        // Kart, arkasının görüntüsü hazır olunca belirir.
+        await card.RefreshGlassAsync(animateTint: false);
+
+        if (popup.IsOpen)
+        {
+            AnimatePopupIn(card, popup == GroupPanel ? PanelScale : TrayScale);
+        }
     }
 
     private void AutoHideTimer_Tick(object? sender, EventArgs e)

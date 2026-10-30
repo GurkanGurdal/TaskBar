@@ -684,21 +684,15 @@
                Opened="Popup_OpenedOrClosed"
                Closed="Popup_OpenedOrClosed">
             <Border Padding="20">
-                <Border x:Name="TrayCard"
-                        Padding="10"
-                        Width="182"
-                        AllowDrop="False"
-                        SizeChanged="PopupCard_SizeChanged"
-                        Background="{StaticResource PopupFill}"
-                        BorderBrush="{StaticResource IslandStroke}"
-                        BorderThickness="1"
-                        CornerRadius="16">
-                    <Border.RenderTransform>
+                <local:GlassCard x:Name="TrayCard"
+                                 Padding="10"
+                                 Width="182"
+                                 AllowDrop="False"
+                                 SizeChanged="PopupCard_SizeChanged"
+                                 CornerRadius="16">
+                    <local:GlassCard.RenderTransform>
                         <ScaleTransform x:Name="TrayScale" />
-                    </Border.RenderTransform>
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.55" />
-                    </Border.Effect>
+                    </local:GlassCard.RenderTransform>
                     <ItemsControl x:Name="TrayOverflowList" Focusable="False" ItemTemplate="{StaticResource TrayIconTemplate}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -706,7 +700,7 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
-                </Border>
+                </local:GlassCard>
             </Border>
         </Popup>
 
@@ -716,22 +710,16 @@
                Opened="Popup_OpenedOrClosed"
                Closed="Popup_OpenedOrClosed">
             <Border Padding="20">
-            <Border x:Name="PanelCard"
-                    Padding="14"
-                    Width="372"
-                    AllowDrop="False"
-                    SizeChanged="PopupCard_SizeChanged"
-                    Background="{StaticResource PopupFill}"
-                    BorderBrush="{StaticResource IslandStroke}"
-                    BorderThickness="1"
-                    CornerRadius="20"
-                    RenderTransformOrigin="0.5,1">
-                <Border.RenderTransform>
+            <local:GlassCard x:Name="PanelCard"
+                             Padding="14"
+                             Width="372"
+                             AllowDrop="False"
+                             SizeChanged="PopupCard_SizeChanged"
+                             CornerRadius="20"
+                             RenderTransformOrigin="0.5,1">
+                <local:GlassCard.RenderTransform>
                     <ScaleTransform x:Name="PanelScale" />
-                </Border.RenderTransform>
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.55" />
-                </Border.Effect>
+                </local:GlassCard.RenderTransform>
                 <StackPanel>
                     <DockPanel Margin="2,0,0,0">
                         <Button DockPanel.Dock="Right"
@@ -760,12 +748,13 @@
                                        FontSize="15"
                                        FontWeight="SemiBold"
                                        TextTrimming="CharacterEllipsis" />
-                            <TextBlock Foreground="{StaticResource TextSecondary}" FontSize="11">
+                            <TextBlock Foreground="{StaticResource TextPrimary}" Opacity="0.85" FontSize="11">
                                 <Run Text="{Binding Items.Count, Mode=OneWay}" /><Run Text=" öğe" />
                             </TextBlock>
                         </StackPanel>
                     </DockPanel>
-                    <TextBlock Foreground="{StaticResource TextSecondary}"
+                    <TextBlock Foreground="{StaticResource TextPrimary}"
+                               Opacity="0.85"
                                Text="Bu grup boş. Eklemek için dosyaları çubuktaki grubun üzerine sürükleyin ya da Ekle'ye tıklayın."
                                TextWrapping="Wrap"
                                FontSize="12"
@@ -811,7 +800,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-            </Border>
+            </local:GlassCard>
             </Border>
         </Popup>
     </Grid>

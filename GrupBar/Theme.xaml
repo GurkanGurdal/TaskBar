@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:GrupBar">
     <!-- Yüzeyler -->
     <!-- Ada camı: bulanıklığı arkadaki pencere, tonu BarWindow yapar (UpdateIslandTint) -->
     <!-- Kenar ışığı: sol üstten vurur, altta hafifçe geri döner -->
@@ -42,6 +43,48 @@
     <SolidColorBrush x:Key="TextSecondary" Color="#A3ABBD" />
 
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+
+    <!-- Açılır kartların camı: katmanlar adayla aynı (BarWindow.xaml, MainIsland) -->
+    <Style TargetType="local:GlassCard">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+        <Setter Property="Opacity" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="local:GlassCard">
+                    <Grid>
+                        <Grid x:Name="PART_ShadowHost" Margin="-20" IsHitTestVisible="False">
+                            <Border Margin="20" Background="Black" CornerRadius="{TemplateBinding CornerRadius}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.55" />
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                        <Grid x:Name="PART_GlassHost" IsHitTestVisible="False">
+                            <Rectangle x:Name="PART_GlassImage" Margin="-8" RenderOptions.BitmapScalingMode="Linear">
+                                <Rectangle.Effect>
+                                    <BlurEffect Radius="9" KernelType="Gaussian" RenderingBias="Performance" />
+                                </Rectangle.Effect>
+                            </Rectangle>
+                        </Grid>
+                        <Border x:Name="PART_Fallback"
+                                Visibility="Collapsed"
+                                Background="{StaticResource PopupFill}"
+                                CornerRadius="{TemplateBinding CornerRadius}" />
+                        <Border x:Name="PART_Tint"
+                                BorderBrush="{StaticResource IslandStroke}"
+                                BorderThickness="1"
+                                CornerRadius="{TemplateBinding CornerRadius}" />
+                        <Border Margin="1"
+                                Background="{StaticResource IslandSheen}"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                IsHitTestVisible="False" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <!-- İpucu -->
     <Style TargetType="ToolTip">
