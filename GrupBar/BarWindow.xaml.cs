@@ -1,0 +1,733 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
+using ManagedShell;
+using ManagedShell.AppBar;
+using ManagedShell.Common.Enums;
+using ManagedShell.Common.Helpers;
+using ManagedShell.Interop;
+using ManagedShell.WindowsTasks;
+using ManagedShell.WindowsTray;
+using Microsoft.Win32;
+
+namespace GrupBar;
+
+public partial class BarWindow : AppBarWindow
+{
+    private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromRgb(0x3A, 0x5A, 0x80));
+
+    private static readonly int TaskbarCreatedMessage = NativeMethods.RegisterWindowMessage("TaskbarCreated");
+
+    private readonly AppSettings _settings;
+    private readonly ShellManager _shellManager;
+    private readonly NotificationArea _notificationArea;
+    private readonly ICollectionView _taskWindows;
+    private IntPtr _windowsTray;
+    private AppGroup? _panelGroup;
+    private bool _startMenuWasOpen;
+    private ApplicationWindow.WindowState? _pressedTaskState;
+    private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private long _clockMinute;
+
+    public BarWindow(ShellManager shellManager, AppSettings settings, AppBarScreen screen)
+        : base(shellManager.AppBarManager, shellManager.ExplorerHelper, shellManager.FullScreenHelper,
+            screen, settings.Edge, AppBarMode.Normal, settings.Thickness)
+    {
+        _settings = settings;
+
+        InitializeComponent();
+        DataContext = settings;
+        _shellManager = shellManager;
+        _notificationArea = shellManager.NotificationArea;
+        _windowsTray = WindowHelper.FindWindowsTray(_notificationArea.Handle);
+
+        // Her çubuk kendi ekranındaki pencereleri gösterir; pencere taşınınca düğmesi de taşınır.
+        _taskWindows = shellManager.Tasks.CreateGroupedWindowsCollection();
+        _taskWindows.Filter = item => item is ApplicationWindow { ShowInTaskbar: true } window && window.HMonitor == Screen.HMonitor;
+        TaskList.ItemsSource = _taskWindows;
+
+        // Tepsi, Windows'taki gibi yalnızca ana ekranda.
+        if (Screen.Primary)
+        {
+            TrayList.ItemsSource = _notificationArea.AllIcons;
+        }
+
+        Closed += BarWindow_Closed;
+
+        // Temel sınıf yalnızca geçerli yönün boyutunu ayarlıyor; kenar değişince diğeri de gerekli.
+        DesiredHeight = settings.Thickness;
+        DesiredWidth = settings.Thickness;
+
+        UpdateMenuChecks();
+        _settings.PropertyChanged += Settings_PropertyChanged;
+
+        UpdateClock();
+        _clockTimer.Tick += ClockTimer_Tick;
+        _clockTimer.Start();
+    }
+
+    #region Explorer restart
+    protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == TaskbarCreatedMessage)
+        {
+            Dispatcher.BeginInvoke(HandleTaskbarCreated);
+        }
+
+        return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
+    }
+
+    private void HandleTaskbarCreated()
+    {
+        // Bu yayını tepsi servisi de yapıyor; yalnızca Explorer gerçekten yeniden başladıysa ilgilen.
+        IntPtr windowsTray = WindowHelper.FindWindowsTray(_notificationArea.Handle);
+        if (windowsTray == _windowsTray || windowsTray == IntPtr.Zero || AllowClose)
+        {
+            return;
+        }
+        _windowsTray = windowsTray;
+
+        // Eski Explorer'la birlikte AppBar kaydı ve çalışma alanı da gitti.
+        UnregisterAppBar();
+        RegisterAppBar();
+        UpdatePosition();
+
+        // Kapanan Dosya Gezgini pencereleri listede kalmasın. Görev servisi ortak; tek çubuk yenilesin.
+        if (Screen.Primary)
+        {
+            _shellManager.Tasks.Dispose();
+            _shellManager.Tasks.Initialize(true);
+        }
+    }
+    #endregion
+
+    #region Start button
+    private void StartButton_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        // Tıklama Başlat menüsünü zaten kapatır; basmadan önce açık mıydı, burada bak.
+        if (e.LeftButton == MouseButtonState.Released)
+        {
+            _startMenuWasOpen = IsStartMenuOpen();
+        }
+    }
+
+    private void StartButton_Click(object sender, RoutedEventArgs e)
+    {
+        ClosePanel();
+
+        bool wasOpen = _startMenuWasOpen;
+        _startMenuWasOpen = !wasOpen;
+
+        if (!wasOpen)
+        {
+            ShellHelper.ShowStartMenu();
+        }
+    }
+
+    private void StartButton_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        ShellHelper.ShowStartContextMenu();
+        e.Handled = true;
+    }
+
+    private static bool IsStartMenuOpen()
+    {
+        NativeMethods.GetWindowThreadProcessId(NativeMethods.GetForegroundWindow(), out uint processId);
+        try
+        {
+            using Process process = Process.GetProcessById((int)processId);
+            return process.ProcessName is "StartMenuExperienceHost" or "SearchHost" or "SearchApp";
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+    #endregion
+
+    #region Notification area
+    private void Window_PositionChanged(object? sender, EventArgs e)
+    {
+        UpdateTrayHost();
+    }
+
+    private void UpdateTrayHost()
+    {
+        if (!Screen.Primary)
+        {
+            return;
+        }
+
+        // Uygulamalar görev çubuğunun yerini buradan öğreniyor (ABM_GETTASKBARPOS, açılır pencereler).
+        _notificationArea.SetTrayHostSizeData(new TrayHostSizeData
+        {
+            edge = (NativeMethods.ABEdge)AppBarEdge,
+            rc = new NativeMethods.Rect
+            {
+                Top = (int)(Top * DpiScale),
+                Left = (int)(Left * DpiScale),
+                Bottom = (int)((Top + ActualHeight) * DpiScale),
+                Right = (int)((Left + ActualWidth) * DpiScale)
+            }
+        });
+    }
+
+    private void TrayIcon_MouseEnter(object sender, MouseEventArgs e)
+    {
+        var border = (FrameworkElement)sender;
+        Point location = border.PointToScreen(new Point(0, 0));
+
+        // Shell_NotifyIconGetRect için ikonun yeri.
+        NotifyIcon icon = TrayIconOf(sender);
+        icon.Placement = new NativeMethods.Rect
+        {
+            Top = (int)location.Y,
+            Left = (int)location.X,
+            Bottom = (int)(border.ActualHeight * DpiScale),
+            Right = (int)(border.ActualWidth * DpiScale)
+        };
+        icon.IconMouseEnter(CursorParam());
+        e.Handled = true;
+    }
+
+    private void TrayIcon_MouseLeave(object sender, MouseEventArgs e)
+    {
+        TrayIconOf(sender).IconMouseLeave(CursorParam());
+        e.Handled = true;
+    }
+
+    private void TrayIcon_MouseMove(object sender, MouseEventArgs e)
+    {
+        TrayIconOf(sender).IconMouseMove(CursorParam());
+        e.Handled = true;
+    }
+
+    private void TrayIcon_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        ClosePanel();
+        UpdateTrayHost();
+
+        // Sol tık Windows'taki gibi bırakınca gönderiliyor.
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            TrayIconOf(sender).IconMouseDown(e.ChangedButton, CursorParam(), System.Windows.Forms.SystemInformation.DoubleClickTime);
+        }
+        e.Handled = true;
+    }
+
+    private void TrayIcon_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        NotifyIcon icon = TrayIconOf(sender);
+        int doubleClickTime = System.Windows.Forms.SystemInformation.DoubleClickTime;
+
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            icon.IconMouseDown(e.ChangedButton, CursorParam(), doubleClickTime);
+        }
+        icon.IconMouseUp(e.ChangedButton, CursorParam(), doubleClickTime);
+        e.Handled = true;
+    }
+
+    private static NotifyIcon TrayIconOf(object sender)
+    {
+        return (NotifyIcon)((FrameworkElement)sender).DataContext;
+    }
+
+    private static uint CursorParam()
+    {
+        System.Drawing.Point position = System.Windows.Forms.Cursor.Position;
+        return unchecked((uint)((position.Y << 16) | (position.X & 0xFFFF)));
+    }
+    #endregion
+
+    #region Clock
+    private void ClockTimer_Tick(object? sender, EventArgs e)
+    {
+        UpdateClock();
+    }
+
+    private void UpdateClock()
+    {
+        DateTime now = DateTime.Now;
+
+        // Her saniye bak: uykudan çıkınca veya sistem saati değişince de hemen düzelsin.
+        long minute = now.Ticks / TimeSpan.TicksPerMinute;
+        if (minute == _clockMinute)
+        {
+            return;
+        }
+        _clockMinute = minute;
+
+        TimeText.Text = now.ToString("t");
+        DateText.Text = now.ToString("d");
+        Clock.ToolTip = now.ToString("D");
+    }
+    #endregion
+
+    #region Bar menu
+    private void EdgeItem_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.Edge = (AppBarEdge)((MenuItem)sender).Tag;
+    }
+
+    private void ThicknessItem_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.Thickness = ParseThickness((MenuItem)sender);
+    }
+
+    private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Menü ve ayarlar penceresi yalnızca ayarı değiştirir; her çubuk kendine uygular, kaydetmek App'te.
+        if (e.PropertyName == nameof(AppSettings.Edge))
+        {
+            AppBarEdge = _settings.Edge;
+            UpdatePosition();
+        }
+        else if (e.PropertyName == nameof(AppSettings.Thickness))
+        {
+            DesiredHeight = _settings.Thickness;
+            DesiredWidth = _settings.Thickness;
+            UpdatePosition();
+        }
+
+        UpdateMenuChecks();
+    }
+
+    private void SettingsItem_Click(object sender, RoutedEventArgs e)
+    {
+        ((App)Application.Current).OpenSettings();
+    }
+
+    private void BarWindow_Closed(object? sender, EventArgs e)
+    {
+        _settings.PropertyChanged -= Settings_PropertyChanged;
+        _clockTimer.Stop();
+
+        TaskList.ItemsSource = null;
+        (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();
+    }
+
+    protected override void SetScreenProperties(ScreenSetupReason reason)
+    {
+        // DPI değişimi yalnızca bu pencereyi ilgilendirir; ekran düzeni değiştiyse tüm çubuklar yeniden açılır.
+        if (reason == ScreenSetupReason.DpiChange)
+        {
+            UpdatePosition();
+        }
+        else
+        {
+            ((App)Application.Current).NotifyDisplayChange();
+        }
+    }
+
+    private void ExitItem_Click(object sender, RoutedEventArgs e)
+    {
+        ((App)Application.Current).ExitGracefully();
+    }
+
+    private void UpdateMenuChecks()
+    {
+        foreach (MenuItem item in EdgeMenu.Items)
+        {
+            item.IsChecked = (AppBarEdge)item.Tag == _settings.Edge;
+        }
+
+        foreach (MenuItem item in ThicknessMenu.Items)
+        {
+            item.IsChecked = ParseThickness(item) == _settings.Thickness;
+        }
+    }
+
+    private static double ParseThickness(MenuItem item)
+    {
+        return double.Parse((string)item.Tag, CultureInfo.InvariantCulture);
+    }
+    #endregion
+
+    #region Groups
+    private void NewGroupItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new NameDialog("") { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        _settings.Groups.Add(new AppGroup { Name = dialog.GroupName });
+        _settings.Save();
+    }
+
+    private void RenameGroupItem_Click(object sender, RoutedEventArgs e)
+    {
+        RenameGroup(GroupOf(sender), this);
+    }
+
+    internal void RenameGroup(AppGroup group, Window owner)
+    {
+        var dialog = new NameDialog(group.Name) { Owner = owner };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        group.Name = dialog.GroupName;
+        _settings.Save();
+    }
+
+    private void ChooseIconItem_Click(object sender, RoutedEventArgs e)
+    {
+        AppGroup group = GroupOf(sender);
+
+        var dialog = new OpenFileDialog
+        {
+            DereferenceLinks = false,
+            Filter = "İkonlar ve programlar|*.ico;*.exe;*.lnk;*.dll;*.png|Tüm dosyalar|*.*"
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        group.IconPath = dialog.FileName;
+        _settings.Save();
+    }
+
+    private void ResetIconItem_Click(object sender, RoutedEventArgs e)
+    {
+        GroupOf(sender).IconPath = null;
+        _settings.Save();
+    }
+
+    private void DeleteGroupItem_Click(object sender, RoutedEventArgs e)
+    {
+        DeleteGroup(GroupOf(sender), this);
+    }
+
+    internal void DeleteGroup(AppGroup group, Window owner)
+    {
+        if (group.Items.Count > 0 && MessageBox.Show(owner,
+                $"\"{group.Name}\" grubu ve içindeki {group.Items.Count} öğe silinsin mi? Programların kendisi silinmez.",
+                "Grubu sil", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        if (_panelGroup == group)
+        {
+            ClosePanel();
+        }
+
+        _settings.Groups.Remove(group);
+        group.Dispose();
+        _settings.Save();
+    }
+
+    private static AppGroup GroupOf(object sender)
+    {
+        return (AppGroup)((FrameworkElement)sender).DataContext;
+    }
+    #endregion
+
+    #region Pinned apps
+    private void PinFilesItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddItems(_settings.Pinned, PickFiles());
+    }
+
+    private void PinFolderItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddItems(_settings.Pinned, PickFolders());
+    }
+
+    private void PinStoreAppItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddItems(_settings.Pinned, PickStoreApps());
+    }
+
+    private void UnpinItem_Click(object sender, RoutedEventArgs e)
+    {
+        Unpin((GroupItem)((FrameworkElement)sender).DataContext);
+    }
+
+    internal void Unpin(GroupItem item)
+    {
+        _settings.Pinned.Remove(item);
+        item.Dispose();
+        _settings.Save();
+    }
+
+    private void Window_DragOver(object sender, DragEventArgs e)
+    {
+        SetDropEffect(e);
+    }
+
+    private void Window_Drop(object sender, DragEventArgs e)
+    {
+        // Grup düğmeleri bırakmayı kendileri işliyor; buraya gelen çubuğun geri kalanına bırakılmıştır.
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            AddItems(_settings.Pinned, paths.Select(GroupItem.FromPath));
+        }
+
+        e.Handled = true;
+    }
+    #endregion
+
+    #region Running windows
+    private void TaskButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Çubuğa tıklamak pencereyi etkin olmaktan çıkarabilir; basıldığı andaki durumu sakla.
+        _pressedTaskState = WindowOf(sender).State;
+    }
+
+    private void TaskButton_Click(object sender, RoutedEventArgs e)
+    {
+        ApplicationWindow window = WindowOf(sender);
+        ApplicationWindow.WindowState state = _pressedTaskState ?? window.State;
+        _pressedTaskState = null;
+
+        ClosePanel();
+
+        if (state == ApplicationWindow.WindowState.Active && window.CanMinimize)
+        {
+            window.Minimize();
+        }
+        else
+        {
+            window.BringToFront();
+        }
+    }
+
+    private void CloseTaskItem_Click(object sender, RoutedEventArgs e)
+    {
+        WindowOf(sender).Close();
+    }
+
+    private static ApplicationWindow WindowOf(object sender)
+    {
+        return (ApplicationWindow)((FrameworkElement)sender).DataContext;
+    }
+    #endregion
+
+    #region Panel
+    private void GroupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        AppGroup group = GroupOf(button);
+
+        bool wasOpenForGroup = GroupPanel.IsOpen && _panelGroup == group;
+        ClosePanel();
+
+        if (wasOpenForGroup)
+        {
+            return;
+        }
+
+        _panelGroup = group;
+        GroupPanel.DataContext = group;
+        GroupPanel.PlacementTarget = button;
+        GroupPanel.Placement = AppBarEdge switch
+        {
+            AppBarEdge.Top => PlacementMode.Bottom,
+            AppBarEdge.Left => PlacementMode.Right,
+            AppBarEdge.Right => PlacementMode.Left,
+            _ => PlacementMode.Top
+        };
+        OpenPanel();
+    }
+
+    private void OpenPanel()
+    {
+        // Panel, pencere etkin olmayınca kapanıyor; bu yüzden etkin olduğundan emin ol.
+        Activate();
+        GroupPanel.IsOpen = true;
+    }
+
+    private void ClosePanel()
+    {
+        GroupPanel.IsOpen = false;
+    }
+
+    private void Window_Deactivated(object? sender, EventArgs e)
+    {
+        ClosePanel();
+    }
+
+    private void Window_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        ClosePanel();
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && GroupPanel.IsOpen)
+        {
+            ClosePanel();
+            e.Handled = true;
+        }
+    }
+
+    private void ItemButton_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (GroupItem)((FrameworkElement)sender).DataContext;
+
+        ClosePanel();
+        ReportFailures(Launcher.Launch(item) ? [] : [item]);
+    }
+
+    private void OpenAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        List<GroupItem> items = _panelGroup?.Items.ToList() ?? [];
+
+        ClosePanel();
+        ReportFailures(items.Where(item => !Launcher.Launch(item)).ToList());
+    }
+
+    private void ReportFailures(IReadOnlyCollection<GroupItem> failed)
+    {
+        if (failed.Count > 0)
+        {
+            MessageBox.Show(this, "Şunlar açılamadı:\n" + string.Join("\n", failed.Select(item => item.Path)),
+                "GrupBar", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void RemoveItem_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (GroupItem)((FrameworkElement)sender).DataContext;
+
+        _panelGroup?.Items.Remove(item);
+        item.Dispose();
+        _settings.Save();
+    }
+    #endregion
+
+    #region Adding items
+    private void AddButton_Click(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+
+        button.ContextMenu.PlacementTarget = button;
+        button.ContextMenu.Placement = PlacementMode.Bottom;
+        button.ContextMenu.IsOpen = true;
+    }
+
+    private void AddFilesItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddToPanelGroup(PickFiles());
+    }
+
+    private void AddFolderItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddToPanelGroup(PickFolders());
+    }
+
+    private void AddStoreAppItem_Click(object sender, RoutedEventArgs e)
+    {
+        AddToPanelGroup(PickStoreApps());
+    }
+
+    private List<GroupItem> PickFiles()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = true,
+            DereferenceLinks = false,
+            Filter = "Programlar ve kısayollar|*.exe;*.lnk|Tüm dosyalar|*.*"
+        };
+        return dialog.ShowDialog(this) == true ? dialog.FileNames.Select(GroupItem.FromPath).ToList() : [];
+    }
+
+    private List<GroupItem> PickFolders()
+    {
+        var dialog = new OpenFolderDialog { Multiselect = true };
+        return dialog.ShowDialog(this) == true ? dialog.FolderNames.Select(GroupItem.FromPath).ToList() : [];
+    }
+
+    private List<GroupItem> PickStoreApps()
+    {
+        var dialog = new StoreAppPicker { Owner = this };
+
+        // Seçicideki nesneler kapanınca serbest kalıyor; yenilerini döndür.
+        return dialog.ShowDialog() == true
+            ? dialog.SelectedApps.Select(app => new GroupItem { Name = app.Name, Path = app.Path }).ToList()
+            : [];
+    }
+
+    private void AddToPanelGroup(IEnumerable<GroupItem> items)
+    {
+        if (_panelGroup == null)
+        {
+            return;
+        }
+
+        AddItems(_panelGroup.Items, items);
+
+        // Diyalog açılınca pencere etkinliğini kaybedip paneli kapatmıştı.
+        OpenPanel();
+    }
+
+    private void AddItems(ICollection<GroupItem> target, IEnumerable<GroupItem> items)
+    {
+        foreach (GroupItem item in items)
+        {
+            if (target.Any(existing => string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase)))
+            {
+                item.Dispose();
+                continue;
+            }
+
+            target.Add(item);
+        }
+
+        _settings.Save();
+    }
+
+    private void GroupButton_DragEnter(object sender, DragEventArgs e)
+    {
+        if (SetDropEffect(e))
+        {
+            ((Button)sender).Background = DropHighlight;
+        }
+    }
+
+    private void GroupButton_DragOver(object sender, DragEventArgs e)
+    {
+        SetDropEffect(e);
+    }
+
+    private void GroupButton_DragLeave(object sender, DragEventArgs e)
+    {
+        ((Button)sender).ClearValue(BackgroundProperty);
+    }
+
+    private void GroupButton_Drop(object sender, DragEventArgs e)
+    {
+        var button = (Button)sender;
+        button.ClearValue(BackgroundProperty);
+
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            AddItems(GroupOf(button).Items, paths.Select(GroupItem.FromPath));
+        }
+
+        e.Handled = true;
+    }
+
+    private static bool SetDropEffect(DragEventArgs e)
+    {
+        bool canDrop = e.Data.GetDataPresent(DataFormats.FileDrop);
+
+        e.Effects = canDrop ? DragDropEffects.Link : DragDropEffects.None;
+        e.Handled = true;
+        return canDrop;
+    }
+    #endregion
+}
