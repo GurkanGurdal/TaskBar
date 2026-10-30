@@ -121,6 +121,16 @@ public partial class App : Application
         {
             ApplyTaskbarMode(_settings!.HideWindowsTaskbar);
         }
+        else if (e.PropertyName == nameof(AppSettings.AutoHideBar))
+        {
+            // Saydamlık pencere açıldıktan sonra değişmiyor; çubuklar yeniden açılmalı. Değişiklik menüden
+            // de gelebilir, o menünün kapanması bitsin.
+            Dispatcher.BeginInvoke(() =>
+            {
+                CloseBars();
+                OpenBars();
+            }, DispatcherPriority.Background);
+        }
 
         _settings!.Save();
     }

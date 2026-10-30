@@ -23,6 +23,8 @@ public partial class BarWindow : AppBarWindow
 {
     private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromRgb(0x3A, 0x5A, 0x80));
 
+    private const double EdgeStripThickness = 2;
+
     private static readonly int TaskbarCreatedMessage = NativeMethods.RegisterWindowMessage("TaskbarCreated");
 
     private readonly AppSettings _settings;
@@ -35,15 +37,21 @@ public partial class BarWindow : AppBarWindow
     private ApplicationWindow.WindowState? _pressedTaskState;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
+    private readonly DispatcherTimer _startMenuTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private bool _startMenuVisible;
 
     public BarWindow(ShellManager shellManager, AppSettings settings, AppBarScreen screen)
         : base(shellManager.AppBarManager, shellManager.ExplorerHelper, shellManager.FullScreenHelper,
-            screen, settings.Edge, AppBarMode.Normal, settings.Thickness)
+            screen, settings.Edge, settings.AutoHideBar ? AppBarMode.AutoHide : AppBarMode.Normal, settings.Thickness)
     {
         _settings = settings;
 
+        // Gizliyken pencerenin kalanı saydam ve tıklamaları alttaki pencerelere geçirir.
+        AllowsTransparency = settings.AutoHideBar;
+
         InitializeComponent();
         DataContext = settings;
+        AutoHideElement = BarRoot;
         _shellManager = shellManager;
         _notificationArea = shellManager.NotificationArea;
         _windowsTray = WindowHelper.FindWindowsTray(_notificationArea.Handle);
@@ -71,7 +79,79 @@ public partial class BarWindow : AppBarWindow
         UpdateClock();
         _clockTimer.Tick += ClockTimer_Tick;
         _clockTimer.Start();
+
+        if (AppBarMode == AppBarMode.AutoHide)
+        {
+            // Çubuk tamamen ekran dışına kayar; fareyi görünmez şerit yakalar.
+            AutoHideShowMargin = 0;
+            EdgeStrip.Visibility = Visibility.Visible;
+            UpdateEdgeStrip();
+
+            if (Screen.Primary)
+            {
+                _startMenuTimer.Tick += StartMenuTimer_Tick;
+                _startMenuTimer.Start();
+            }
+        }
     }
+
+    #region Auto-hide
+    private void UpdateEdgeStrip()
+    {
+        bool horizontal = Orientation == Orientation.Horizontal;
+
+        EdgeStrip.Height = horizontal ? EdgeStripThickness : double.NaN;
+        EdgeStrip.Width = horizontal ? double.NaN : EdgeStripThickness;
+        EdgeStrip.VerticalAlignment = AppBarEdge switch
+        {
+            AppBarEdge.Top => VerticalAlignment.Top,
+            AppBarEdge.Bottom => VerticalAlignment.Bottom,
+            _ => VerticalAlignment.Stretch
+        };
+        EdgeStrip.HorizontalAlignment = AppBarEdge switch
+        {
+            AppBarEdge.Left => HorizontalAlignment.Left,
+            AppBarEdge.Right => HorizontalAlignment.Right,
+            _ => HorizontalAlignment.Stretch
+        };
+    }
+
+    protected override bool ShouldAllowAutoHide()
+    {
+        // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
+        return base.ShouldAllowAutoHide() && GroupPanel?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
+    }
+
+    private void GroupPanel_OpenedOrClosed(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(AllowAutoHide));
+    }
+
+    private void StartMenuTimer_Tick(object? sender, EventArgs e)
+    {
+        bool visible = IsStartMenuOpen();
+        if (visible != _startMenuVisible)
+        {
+            _startMenuVisible = visible;
+            OnPropertyChanged(nameof(AllowAutoHide));
+        }
+    }
+
+    private void ShowAfterLayoutChange()
+    {
+        if (AppBarMode != AppBarMode.AutoHide)
+        {
+            return;
+        }
+
+        UpdateEdgeStrip();
+
+        // Kenar değişince kayma ekseni de değişiyor; eski eksende kalan öteleme silinmeli.
+        BarRoot.RenderTransform.BeginAnimation(TranslateTransform.XProperty, null);
+        BarRoot.RenderTransform.BeginAnimation(TranslateTransform.YProperty, null);
+        PeekDuringAutoHide();
+    }
+    #endregion
 
     #region Explorer restart
     protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -94,9 +174,12 @@ public partial class BarWindow : AppBarWindow
         }
         _windowsTray = windowsTray;
 
-        // Eski Explorer'la birlikte AppBar kaydı ve çalışma alanı da gitti.
-        UnregisterAppBar();
-        RegisterAppBar();
+        // Eski Explorer'la birlikte AppBar kaydı ve çalışma alanı da gitti. Otomatik gizlemede kayıt yok.
+        if (AppBarMode == AppBarMode.Normal)
+        {
+            UnregisterAppBar();
+            RegisterAppBar();
+        }
         UpdatePosition();
 
         // Kapanan Dosya Gezgini pencereleri listede kalmasın. Görev servisi ortak; tek çubuk yenilesin.
@@ -289,12 +372,14 @@ public partial class BarWindow : AppBarWindow
         {
             AppBarEdge = _settings.Edge;
             UpdatePosition();
+            ShowAfterLayoutChange();
         }
         else if (e.PropertyName == nameof(AppSettings.Thickness))
         {
             DesiredHeight = _settings.Thickness;
             DesiredWidth = _settings.Thickness;
             UpdatePosition();
+            ShowAfterLayoutChange();
         }
 
         UpdateMenuChecks();
@@ -309,6 +394,7 @@ public partial class BarWindow : AppBarWindow
     {
         _settings.PropertyChanged -= Settings_PropertyChanged;
         _clockTimer.Stop();
+        _startMenuTimer.Stop();
 
         TaskList.ItemsSource = null;
         (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();

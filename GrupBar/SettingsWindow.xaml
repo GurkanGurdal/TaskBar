@@ -41,6 +41,11 @@
                               SelectedValuePath="Value"
                               SelectedValue="{Binding Thickness}" />
                 </Grid>
+                <CheckBox Content="Çubuğu otomatik gizle" Margin="0,16,0,0" IsChecked="{Binding AutoHideBar}" />
+                <TextBlock Margin="20,2,0,0"
+                           Foreground="#606060"
+                           TextWrapping="Wrap"
+                           Text="Fareyi ekranın kenarına götürünce açılır." />
                 <CheckBox x:Name="ClockCheck" Content="Saati göster" Margin="0,16,0,0" IsChecked="{Binding ShowClock}" />
                 <CheckBox Content="Tarihi göster"
                           Margin="20,6,0,0"

@@ -5,7 +5,7 @@
         xmlns:tasks="clr-namespace:ManagedShell.WindowsTasks;assembly=ManagedShell.WindowsTasks"
         xmlns:local="clr-namespace:GrupBar"
         Title="GrupBar"
-        Background="#202020"
+        Background="Transparent"
         AllowDrop="True"
         Deactivated="Window_Deactivated"
         LocationChanged="Window_PositionChanged"
@@ -82,6 +82,7 @@
                 <MenuItem Header="Sol" Tag="{x:Static appbar:AppBarEdge.Left}" Click="EdgeItem_Click" />
                 <MenuItem Header="Sağ" Tag="{x:Static appbar:AppBarEdge.Right}" Click="EdgeItem_Click" />
             </MenuItem>
+            <MenuItem Header="Otomatik gizle" IsCheckable="True" IsChecked="{Binding AutoHideBar}" />
             <MenuItem x:Name="ThicknessMenu" Header="Kalınlık">
                 <MenuItem Header="İnce" Tag="32" Click="ThicknessItem_Click" />
                 <MenuItem Header="Orta" Tag="40" Click="ThicknessItem_Click" />
@@ -93,6 +94,9 @@
         </ContextMenu>
     </Window.ContextMenu>
     <Grid>
+    <!-- Otomatik gizlemede fareyi yakalar. Alfa 1: gözle görünmez ama tıklama ve fare olaylarını alır. -->
+    <Border x:Name="EdgeStrip" Background="#01000000" Visibility="Collapsed" />
+    <Grid x:Name="BarRoot" Background="#202020">
         <DockPanel>
         <StackPanel Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
             <StackPanel.Style>
@@ -291,7 +295,7 @@
         </ItemsControl>
         </DockPanel>
 
-        <Popup x:Name="GroupPanel" StaysOpen="True">
+        <Popup x:Name="GroupPanel" StaysOpen="True" Opened="GroupPanel_OpenedOrClosed" Closed="GroupPanel_OpenedOrClosed">
             <Border Background="#2B2B2B" BorderBrush="#454545" BorderThickness="1" Padding="8" Width="356" AllowDrop="False">
                 <StackPanel>
                     <DockPanel>
@@ -368,5 +372,6 @@
                 </StackPanel>
             </Border>
         </Popup>
+    </Grid>
     </Grid>
 </appbar:AppBarWindow>

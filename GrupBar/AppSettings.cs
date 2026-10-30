@@ -28,6 +28,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _showClock = true;
     private bool _showDate = true;
     private bool _hideWindowsTaskbar = true;
+    private bool _autoHideBar;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -59,6 +60,12 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _hideWindowsTaskbar;
         set => SetField(ref _hideWindowsTaskbar, value);
+    }
+
+    public bool AutoHideBar
+    {
+        get => _autoHideBar;
+        set => SetField(ref _autoHideBar, value);
     }
 
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();
