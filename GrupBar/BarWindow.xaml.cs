@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ManagedShell;
 using ManagedShell.AppBar;
@@ -21,23 +22,69 @@ namespace GrupBar;
 
 public partial class BarWindow : AppBarWindow
 {
-    private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromRgb(0x3A, 0x5A, 0x80));
+    private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromArgb(0x66, 0x7F, 0xA8, 0xFF));
 
-    private const double EdgeStripThickness = 2;
+    /// <summary>Adanın ekran kenarıyla ve pencerelerle arasındaki boşluk.</summary>
+    private const double FloatGap = 8;
+    private const double IslandPadding = 4;
+    private const double PanelShadowMargin = 20;
+    private const double CompactThickness = 36;
+    private const double EdgeRevealDepth = 2;
 
     private static readonly int TaskbarCreatedMessage = NativeMethods.RegisterWindowMessage("TaskbarCreated");
+    private static readonly Guid BatteryIconGuid = new(NotificationArea.POWER_GUID);
+
+    public static readonly DependencyProperty ButtonSizeProperty =
+        DependencyProperty.Register(nameof(ButtonSize), typeof(double), typeof(BarWindow), new PropertyMetadata(32d));
+
+    public static readonly DependencyProperty IconSizeProperty =
+        DependencyProperty.Register(nameof(IconSize), typeof(double), typeof(BarWindow), new PropertyMetadata(20d));
+
+    public static readonly DependencyProperty IslandMarginProperty =
+        DependencyProperty.Register(nameof(IslandMargin), typeof(Thickness), typeof(BarWindow), new PropertyMetadata(new Thickness(FloatGap)));
+
+    public static readonly DependencyProperty IsCompactProperty =
+        DependencyProperty.Register(nameof(IsCompact), typeof(bool), typeof(BarWindow), new PropertyMetadata(false));
+
+    public double ButtonSize
+    {
+        get => (double)GetValue(ButtonSizeProperty);
+        set => SetValue(ButtonSizeProperty, value);
+    }
+
+    public double IconSize
+    {
+        get => (double)GetValue(IconSizeProperty);
+        set => SetValue(IconSizeProperty, value);
+    }
+
+    public Thickness IslandMargin
+    {
+        get => (Thickness)GetValue(IslandMarginProperty);
+        set => SetValue(IslandMarginProperty, value);
+    }
+
+    public bool IsCompact
+    {
+        get => (bool)GetValue(IsCompactProperty);
+        set => SetValue(IsCompactProperty, value);
+    }
 
     private readonly AppSettings _settings;
     private readonly ShellManager _shellManager;
     private readonly NotificationArea _notificationArea;
     private readonly ICollectionView _taskWindows;
+    private readonly ListCollectionView? _trayBattery;
+    private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
     private AppGroup? _panelGroup;
     private bool _startMenuWasOpen;
     private ApplicationWindow.WindowState? _pressedTaskState;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
-    private readonly DispatcherTimer _startMenuTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
+    private int _autoHideTicks;
+    private bool _cursorInBarZone;
     private bool _startMenuVisible;
 
     public BarWindow(ShellManager shellManager, AppSettings settings, AppBarScreen screen)
@@ -46,12 +93,13 @@ public partial class BarWindow : AppBarWindow
     {
         _settings = settings;
 
-        // Gizliyken pencerenin kalanı saydam ve tıklamaları alttaki pencerelere geçirir.
-        AllowsTransparency = settings.AutoHideBar;
+        // Adaların dışı saydam ve tıklamaları alttaki pencerelere geçirir.
+        AllowsTransparency = true;
 
         InitializeComponent();
         DataContext = settings;
         AutoHideElement = BarRoot;
+        ApplyThickness();
         _shellManager = shellManager;
         _notificationArea = shellManager.NotificationArea;
         _windowsTray = WindowHelper.FindWindowsTray(_notificationArea.Handle);
@@ -61,17 +109,16 @@ public partial class BarWindow : AppBarWindow
         _taskWindows.Filter = item => item is ApplicationWindow { ShowInTaskbar: true } window && window.HMonitor == Screen.HMonitor;
         TaskList.ItemsSource = _taskWindows;
 
-        // Tepsi, Windows'taki gibi yalnızca ana ekranda.
+        // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
         if (Screen.Primary)
         {
-            TrayList.ItemsSource = _notificationArea.AllIcons;
+            _trayBattery = CreateTrayView(IsBatteryIcon);
+            _trayOthers = CreateTrayView(icon => !IsBatteryIcon(icon));
+            TrayList.ItemsSource = _trayBattery;
+            TrayOverflowList.ItemsSource = _trayOthers;
         }
 
         Closed += BarWindow_Closed;
-
-        // Temel sınıf yalnızca geçerli yönün boyutunu ayarlıyor; kenar değişince diğeri de gerekli.
-        DesiredHeight = settings.Thickness;
-        DesiredWidth = settings.Thickness;
 
         UpdateMenuChecks();
         _settings.PropertyChanged += Settings_PropertyChanged;
@@ -82,59 +129,105 @@ public partial class BarWindow : AppBarWindow
 
         if (AppBarMode == AppBarMode.AutoHide)
         {
-            // Çubuk tamamen ekran dışına kayar; fareyi görünmez şerit yakalar.
+            // Adalar tamamen ekran dışına kayar; fareyi konumundan takip ediyoruz, kenarda iz kalmaz.
             AutoHideShowMargin = 0;
-            EdgeStrip.Visibility = Visibility.Visible;
-            UpdateEdgeStrip();
-
-            if (Screen.Primary)
-            {
-                _startMenuTimer.Tick += StartMenuTimer_Tick;
-                _startMenuTimer.Start();
-            }
+            _autoHideTimer.Tick += AutoHideTimer_Tick;
+            _autoHideTimer.Start();
         }
     }
 
-    #region Auto-hide
-    private void UpdateEdgeStrip()
+    #region Island layout
+    private void ApplyThickness()
     {
-        bool horizontal = Orientation == Orientation.Horizontal;
+        double thickness = _settings.Thickness;
 
-        EdgeStrip.Height = horizontal ? EdgeStripThickness : double.NaN;
-        EdgeStrip.Width = horizontal ? double.NaN : EdgeStripThickness;
-        EdgeStrip.VerticalAlignment = AppBarEdge switch
-        {
-            AppBarEdge.Top => VerticalAlignment.Top,
-            AppBarEdge.Bottom => VerticalAlignment.Bottom,
-            _ => VerticalAlignment.Stretch
-        };
-        EdgeStrip.HorizontalAlignment = AppBarEdge switch
-        {
-            AppBarEdge.Left => HorizontalAlignment.Left,
-            AppBarEdge.Right => HorizontalAlignment.Right,
-            _ => HorizontalAlignment.Stretch
-        };
+        // Pencere, adayla birlikte çevresindeki boşluğu da kapsar; ayrılan alan da bu kadardır.
+        DesiredHeight = thickness + 2 * FloatGap;
+        DesiredWidth = thickness + 2 * FloatGap;
+
+        ButtonSize = thickness - 2 * IslandPadding;
+        IconSize = Math.Max(16, Math.Round(ButtonSize * 0.62));
+        IsCompact = thickness < CompactThickness;
     }
 
+    private ListCollectionView CreateTrayView(Predicate<NotifyIcon> belongs)
+    {
+        var view = new ListCollectionView(_notificationArea.TrayIcons)
+        {
+            Filter = item => item is NotifyIcon { IsHidden: false } icon && belongs(icon),
+            IsLiveFiltering = true
+        };
+        view.LiveFilteringProperties.Add(nameof(NotifyIcon.IsHidden));
+        return view;
+    }
+
+    private static bool IsBatteryIcon(NotifyIcon icon)
+    {
+        return icon.GUID == BatteryIconGuid;
+    }
+    #endregion
+
+    #region Auto-hide
     protected override bool ShouldAllowAutoHide()
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
-        return base.ShouldAllowAutoHide() && GroupPanel?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
+        return base.ShouldAllowAutoHide() && !_cursorInBarZone && GroupPanel?.IsOpen != true && TrayPopup?.IsOpen != true
+            && !(_startMenuVisible && Screen.Primary);
     }
 
-    private void GroupPanel_OpenedOrClosed(object? sender, EventArgs e)
+    private void Popup_OpenedOrClosed(object? sender, EventArgs e)
     {
+        if (GroupPanel.IsOpen && sender == GroupPanel)
+        {
+            AnimatePopupIn(PanelCard, PanelScale);
+        }
+        else if (TrayPopup.IsOpen && sender == TrayPopup)
+        {
+            AnimatePopupIn(TrayCard, TrayScale);
+        }
+
         OnPropertyChanged(nameof(AllowAutoHide));
     }
 
-    private void StartMenuTimer_Tick(object? sender, EventArgs e)
+    private void AutoHideTimer_Tick(object? sender, EventArgs e)
     {
-        bool visible = IsStartMenuOpen();
-        if (visible != _startMenuVisible)
+        bool changed = UpdateCursorZone();
+
+        // Başlat kontrolü süreç adı okuyor; imleç kadar sık gerekmiyor.
+        if (Screen.Primary && ++_autoHideTicks % 4 == 0)
         {
+            bool visible = IsStartMenuOpen();
+            changed |= visible != _startMenuVisible;
             _startMenuVisible = visible;
+        }
+
+        if (changed)
+        {
             OnPropertyChanged(nameof(AllowAutoHide));
         }
+    }
+
+    private bool UpdateCursorZone()
+    {
+        System.Drawing.Point cursor = System.Windows.Forms.Cursor.Position;
+        System.Drawing.Rectangle bounds = Screen.Bounds;
+
+        // Gizliyken yalnızca ekranın en kenarı açar; açıkken adanın çevresindeki tüm şerit açık tutar.
+        // Ada ortada olduğu için fare kenardan adaya giderken boşluktan geçer; bu sırada kapanmamalı.
+        double thickness = Orientation == Orientation.Horizontal ? DesiredHeight : DesiredWidth;
+        int depth = (int)Math.Round(_cursorInBarZone ? thickness * DpiScale : EdgeRevealDepth);
+
+        bool inZone = bounds.Contains(cursor) && AppBarEdge switch
+        {
+            AppBarEdge.Top => cursor.Y < bounds.Top + depth,
+            AppBarEdge.Left => cursor.X < bounds.Left + depth,
+            AppBarEdge.Right => cursor.X >= bounds.Right - depth,
+            _ => cursor.Y >= bounds.Bottom - depth
+        };
+
+        bool changed = inZone != _cursorInBarZone;
+        _cursorInBarZone = inZone;
+        return changed;
     }
 
     private void ShowAfterLayoutChange()
@@ -143,8 +236,6 @@ public partial class BarWindow : AppBarWindow
         {
             return;
         }
-
-        UpdateEdgeStrip();
 
         // Kenar değişince kayma ekseni de değişiyor; eski eksende kalan öteleme silinmeli.
         BarRoot.RenderTransform.BeginAnimation(TranslateTransform.XProperty, null);
@@ -294,7 +385,8 @@ public partial class BarWindow : AppBarWindow
 
     private void TrayIcon_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        ClosePanel();
+        // Tepsi kartı burada kapanmamalı: ikon kartın içindeyse bırakma olayı gelmez.
+        GroupPanel.IsOpen = false;
         UpdateTrayHost();
 
         // Sol tık Windows'taki gibi bırakınca gönderiliyor.
@@ -316,6 +408,22 @@ public partial class BarWindow : AppBarWindow
         }
         icon.IconMouseUp(e.ChangedButton, CursorParam(), doubleClickTime);
         e.Handled = true;
+
+        // Uygulama kendi menüsünü açarken kart yolda kalmasın.
+        TrayPopup.IsOpen = false;
+    }
+
+    private void TrayOverflowButton_Click(object sender, RoutedEventArgs e)
+    {
+        bool wasOpen = TrayPopup.IsOpen;
+        ClosePanel();
+
+        if (!wasOpen)
+        {
+            PlacePopup(TrayPopup, TrayCard);
+            Activate();
+            TrayPopup.IsOpen = true;
+        }
     }
 
     private static NotifyIcon TrayIconOf(object sender)
@@ -376,8 +484,7 @@ public partial class BarWindow : AppBarWindow
         }
         else if (e.PropertyName == nameof(AppSettings.Thickness))
         {
-            DesiredHeight = _settings.Thickness;
-            DesiredWidth = _settings.Thickness;
+            ApplyThickness();
             UpdatePosition();
             ShowAfterLayoutChange();
         }
@@ -394,10 +501,14 @@ public partial class BarWindow : AppBarWindow
     {
         _settings.PropertyChanged -= Settings_PropertyChanged;
         _clockTimer.Stop();
-        _startMenuTimer.Stop();
+        _autoHideTimer.Stop();
 
         TaskList.ItemsSource = null;
         (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();
+        TrayList.ItemsSource = null;
+        TrayOverflowList.ItemsSource = null;
+        _trayBattery?.DetachFromSourceCollection();
+        _trayOthers?.DetachFromSourceCollection();
     }
 
     protected override void SetScreenProperties(ScreenSetupReason reason)
@@ -619,14 +730,59 @@ public partial class BarWindow : AppBarWindow
         _panelGroup = group;
         GroupPanel.DataContext = group;
         GroupPanel.PlacementTarget = button;
-        GroupPanel.Placement = AppBarEdge switch
-        {
-            AppBarEdge.Top => PlacementMode.Bottom,
-            AppBarEdge.Left => PlacementMode.Right,
-            AppBarEdge.Right => PlacementMode.Left,
-            _ => PlacementMode.Top
-        };
+        PlacePopup(GroupPanel, PanelCard);
         OpenPanel();
+    }
+
+    private void PlacePopup(Popup popup, FrameworkElement card)
+    {
+        // Kart gölge payı kadar içeride; düğmeye ortalı ve adanın yanında süzülür.
+        double gap = IslandPadding + FloatGap - PanelShadowMargin;
+        double popupWidth = card.Width + 2 * PanelShadowMargin;
+        double popupHeight = card.ActualHeight + 2 * PanelShadowMargin;
+
+        if (popup.PlacementTarget is not FrameworkElement target)
+        {
+            return;
+        }
+
+        (popup.Placement, popup.HorizontalOffset, popup.VerticalOffset) = AppBarEdge switch
+        {
+            AppBarEdge.Top => (PlacementMode.Bottom, (target.ActualWidth - popupWidth) / 2, gap),
+            AppBarEdge.Left => (PlacementMode.Right, gap, (target.ActualHeight - popupHeight) / 2),
+            AppBarEdge.Right => (PlacementMode.Left, -gap, (target.ActualHeight - popupHeight) / 2),
+            _ => (PlacementMode.Top, (target.ActualWidth - popupWidth) / 2, -gap)
+        };
+    }
+
+    private void PopupCard_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Yan kenarlarda dikey ortalama kartın yüksekliğine bağlı; öğeler sonradan da değişebilir.
+        if (sender == PanelCard)
+        {
+            PlacePopup(GroupPanel, PanelCard);
+        }
+        else
+        {
+            PlacePopup(TrayPopup, TrayCard);
+        }
+    }
+
+    private void AnimatePopupIn(FrameworkElement card, ScaleTransform scale)
+    {
+        var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
+        var duration = TimeSpan.FromMilliseconds(200);
+
+        card.RenderTransformOrigin = AppBarEdge switch
+        {
+            AppBarEdge.Top => new Point(0.5, 0),
+            AppBarEdge.Left => new Point(0, 0.5),
+            AppBarEdge.Right => new Point(1, 0.5),
+            _ => new Point(0.5, 1)
+        };
+        card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(130)));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.92, 1, duration) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.92, 1, duration) { EasingFunction = ease });
     }
 
     private void OpenPanel()
@@ -639,6 +795,7 @@ public partial class BarWindow : AppBarWindow
     private void ClosePanel()
     {
         GroupPanel.IsOpen = false;
+        TrayPopup.IsOpen = false;
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)
@@ -653,7 +810,7 @@ public partial class BarWindow : AppBarWindow
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && GroupPanel.IsOpen)
+        if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen))
         {
             ClosePanel();
             e.Handled = true;

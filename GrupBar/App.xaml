@@ -7,6 +7,6 @@
              SessionEnding="App_OnSessionEnding"
              DispatcherUnhandledException="App_OnDispatcherUnhandledException">
     <Application.Resources>
-
+        <ResourceDictionary Source="Theme.xaml" />
     </Application.Resources>
 </Application>

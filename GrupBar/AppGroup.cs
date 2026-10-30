@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json.Serialization;
@@ -11,6 +12,7 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
     private string _name = "";
     private string? _iconPath;
     private ShellItem? _icon;
+    private ObservableCollection<GroupItem> _items = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -37,10 +39,35 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public ObservableCollection<GroupItem> Items { get; set; } = new();
+    public ObservableCollection<GroupItem> Items
+    {
+        get => _items;
+        set
+        {
+            _items.CollectionChanged -= Items_CollectionChanged;
+            _items = value;
+
+            // JSON'daki null'ı AppSettings düzeltiyor; o ana kadar burası boş kalabilir.
+            if (_items != null)
+            {
+                _items.CollectionChanged += Items_CollectionChanged;
+            }
+            OnPropertyChanged(nameof(Items));
+            OnPropertyChanged(nameof(PreviewItems));
+        }
+    }
+
+    /// <summary>Grup düğmesindeki küçük ızgara için ilk dört öğe.</summary>
+    [JsonIgnore]
+    public IEnumerable<GroupItem> PreviewItems => _items?.Take(4).ToList() ?? [];
 
     [JsonIgnore]
     public ShellItem? Icon => IconPath == null ? null : _icon ??= new ShellItem(IconPath);
+
+    private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(PreviewItems));
+    }
 
     public void Dispose()
     {
