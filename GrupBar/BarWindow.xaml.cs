@@ -182,6 +182,7 @@ public partial class BarWindow : AppBarWindow
         ButtonSize = thickness - 2 * IslandPadding;
         IconSize = Math.Max(16, Math.Round(ButtonSize * 0.62));
         IsCompact = thickness < CompactThickness;
+        ClockDial.Width = ClockDial.Height = Math.Clamp(ButtonSize - 6, 16, 30);
     }
 
     private ListCollectionView CreateTrayView(Predicate<NotifyIcon> belongs)
@@ -720,8 +721,16 @@ public partial class BarWindow : AppBarWindow
         }
         _clockMinute = minute;
 
-        TimeText.Text = now.ToString("t");
-        DateText.Text = now.ToString("d");
+        // Saat biçimi Windows bölge ayarından; ayraç yoksa hepsi saat kısmında kalır.
+        string time = now.ToString("t");
+        string separator = CultureInfo.CurrentCulture.DateTimeFormat.TimeSeparator;
+        int at = separator.Length > 0 ? time.IndexOf(separator, StringComparison.Ordinal) : -1;
+        ClockHours.Text = at < 0 ? time : time[..at];
+        ClockSeparator.Text = at < 0 ? string.Empty : separator;
+        ClockMinutes.Text = at < 0 ? string.Empty : time[(at + separator.Length)..];
+
+        ClockDial.Time = now;
+        DateText.Text = now.ToString("ddd d MMM");
         Clock.ToolTip = now.ToString("D");
     }
     #endregion

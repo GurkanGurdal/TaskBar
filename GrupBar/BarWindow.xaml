@@ -707,16 +707,18 @@
                                   ItemsPanel="{StaticResource BarItemsPanel}"
                                   ItemTemplate="{StaticResource TrayIconTemplate}" />
 
+                    <!-- Saat: güneş kadranı ve yanında saat, dakika, tarih -->
                     <StackPanel x:Name="Clock"
                                 Background="Transparent"
                                 VerticalAlignment="Center"
+                                Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}"
                                 Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
-                                <Setter Property="Margin" Value="6,0,8,0" />
+                                <Setter Property="Margin" Value="4,0,8,0" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
-                                        <Setter Property="Margin" Value="0,2,0,4" />
+                                        <Setter Property="Margin" Value="0,4,0,5" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -725,21 +727,50 @@
                         <StackPanel.Effect>
                             <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.6" />
                         </StackPanel.Effect>
-                        <TextBlock x:Name="TimeText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                        <TextBlock x:Name="DateText" Foreground="#DDE1EA" FontSize="10.5" HorizontalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource BarText}">
+                        <local:DayDial x:Name="ClockDial" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <local:DayDial.Style>
+                                <Style TargetType="local:DayDial">
+                                    <Setter Property="Margin" Value="0,0,7,0" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowDate}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsCompact, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                                            <Setter Property="Margin" Value="0,0,0,3" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            </local:DayDial.Style>
+                        </local:DayDial>
+                        <StackPanel VerticalAlignment="Center">
+                            <!-- Saat kalın, dakika ince: bir bakışta saat okunur -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="TextElement.FontSize" Value="14.5" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                                                <Setter Property="TextElement.FontSize" Value="12.5" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <local:RollingText x:Name="ClockHours" TextElement.FontWeight="SemiBold" />
+                                <TextBlock x:Name="ClockSeparator" Opacity="0.55" Margin="1,0" />
+                                <local:RollingText x:Name="ClockMinutes" TextElement.FontWeight="Light" />
+                            </StackPanel>
+                            <TextBlock x:Name="DateText" Foreground="#DDE1EA" FontSize="10" HorizontalAlignment="Center" Margin="0,-1,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource BarText}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowDate}" Value="False">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsCompact, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
 
