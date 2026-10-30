@@ -100,6 +100,7 @@ public partial class BarWindow : AppBarWindow
     private readonly DispatcherTimer _previewShowTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewShowDelayMs) };
     private readonly DispatcherTimer _previewHideTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewHideDelayMs) };
     private Button? _previewButton;
+    private readonly ScaleTransform _quickScale = new();
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -141,6 +142,16 @@ public partial class BarWindow : AppBarWindow
         SyncTaskGroups();
         _previewShowTimer.Tick += PreviewShowTimer_Tick;
         _previewHideTimer.Tick += PreviewHideTimer_Tick;
+
+        // Tepsi gibi yalnızca ana ekranda. Gizlemek olmaz: IconButton şablonunun Loaded animasyonu,
+        // şablonu oluşmamış düğmede hedefini bulamaz ve hata fırlatır.
+        if (!Screen.Primary)
+        {
+            ((Panel)QuickButton.Parent).Children.Remove(QuickButton);
+        }
+        QuickPanel.RenderTransform = _quickScale;
+        QuickPanel.AllWindows = () => shellManager.Tasks.GroupedWindows.OfType<ApplicationWindow>();
+        QuickPanel.CloseRequested += ClosePanel;
 
         // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
         if (Screen.Primary)
@@ -259,6 +270,11 @@ public partial class BarWindow : AppBarWindow
                 {
                     _ = card.RefreshGlassAsync(animateTint: true);
                 }
+            }
+
+            if (QuickPopup.IsOpen)
+            {
+                _ = QuickPanel.RefreshGlassAsync(animateTint: true);
             }
         }
     }
@@ -425,7 +441,7 @@ public partial class BarWindow : AppBarWindow
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
         return base.ShouldAllowAutoHide() && !_cursorInBarZone && GroupPanel?.IsOpen != true && TrayPopup?.IsOpen != true
-            && PreviewPopup?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
+            && PreviewPopup?.IsOpen != true && QuickPopup?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
     }
 
     private async void Popup_OpenedOrClosed(object? sender, EventArgs e)
@@ -667,6 +683,14 @@ public partial class BarWindow : AppBarWindow
         NotifyIcon icon = TrayIconOf(sender);
         int doubleClickTime = System.Windows.Forms.SystemInformation.DoubleClickTime;
 
+        // Windows'taki gibi pil, kendi penceresi yerine hızlı ayarları açar.
+        if (e.ChangedButton == MouseButton.Left && IsBatteryIcon(icon))
+        {
+            ToggleQuickSettings();
+            e.Handled = true;
+            return;
+        }
+
         if (e.ChangedButton == MouseButton.Left)
         {
             icon.IconMouseDown(e.ChangedButton, CursorParam(), doubleClickTime);
@@ -676,6 +700,64 @@ public partial class BarWindow : AppBarWindow
 
         // Uygulama kendi menüsünü açarken kart yolda kalmasın.
         TrayPopup.IsOpen = false;
+    }
+
+    private void QuickButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleQuickSettings();
+    }
+
+    private void ToggleQuickSettings()
+    {
+        bool wasOpen = QuickPopup.IsOpen;
+        ClosePanel();
+
+        if (!wasOpen)
+        {
+            PlacePopup(QuickPopup, QuickPanel);
+            Activate();
+            QuickPopup.IsOpen = true;
+        }
+    }
+
+    private async void QuickPopup_OpenedOrClosed(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(AllowAutoHide));
+
+        if (!QuickPopup.IsOpen)
+        {
+            QuickPanel.Close();
+            QuickPanel.BeginAnimation(OpacityProperty, null);
+            UpdateQuickGlyphs();
+            return;
+        }
+
+        await QuickPanel.OpenAsync();
+
+        if (QuickPopup.IsOpen)
+        {
+            AnimatePopupIn(QuickPanel, _quickScale);
+        }
+    }
+
+    private void UpdateQuickGlyphs()
+    {
+        if (!Screen.Primary)
+        {
+            return;
+        }
+
+        QuickVolumeGlyph.Text = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
+
+        try
+        {
+            var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
+            QuickNetworkGlyph.Text = profile == null ? "" : profile.IsWlanConnectionProfile ? "" : "";
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            QuickNetworkGlyph.Text = "";
+        }
     }
 
     private void TrayOverflowButton_Click(object sender, RoutedEventArgs e)
@@ -732,6 +814,8 @@ public partial class BarWindow : AppBarWindow
         ClockDial.Time = now;
         DateText.Text = now.ToString("ddd d MMM");
         Clock.ToolTip = now.ToString("D");
+
+        UpdateQuickGlyphs();
     }
     #endregion
 
@@ -1059,7 +1143,7 @@ public partial class BarWindow : AppBarWindow
         var button = (Button)sender;
         _previewHideTimer.Stop();
 
-        if (GroupPanel.IsOpen || TrayPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        if (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || button.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -1232,6 +1316,10 @@ public partial class BarWindow : AppBarWindow
         {
             PlacePopup(TrayPopup, TrayCard);
         }
+        else if (sender == QuickPanel)
+        {
+            PlacePopup(QuickPopup, QuickPanel);
+        }
         else
         {
             PlacePopup(PreviewPopup, PreviewCard);
@@ -1272,6 +1360,7 @@ public partial class BarWindow : AppBarWindow
     {
         GroupPanel.IsOpen = false;
         TrayPopup.IsOpen = false;
+        QuickPopup.IsOpen = false;
         HidePreview();
     }
 
@@ -1287,7 +1376,7 @@ public partial class BarWindow : AppBarWindow
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen))
+        if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen))
         {
             ClosePanel();
             e.Handled = true;

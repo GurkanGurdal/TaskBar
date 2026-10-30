@@ -700,6 +700,26 @@
                         </Path>
                     </Button>
 
+                    <!-- Hızlı ayarlar: ağ ve ses simgesi; pile tıklamak da aynı paneli açar -->
+                    <Button x:Name="QuickButton"
+                            Style="{StaticResource IconButton}"
+                            AutomationProperties.Name="Hızlı ayarlar"
+                            ToolTip="Hızlı ayarlar"
+                            Click="QuickButton_Click">
+                        <Button.Resources>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                                <Setter Property="FontSize" Value="13.5" />
+                                <Setter Property="HorizontalAlignment" Value="Center" />
+                                <Setter Property="VerticalAlignment" Value="Center" />
+                            </Style>
+                        </Button.Resources>
+                        <StackPanel Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <TextBlock x:Name="QuickNetworkGlyph" Margin="1" Text="&#xE701;" />
+                            <TextBlock x:Name="QuickVolumeGlyph" Margin="1" Text="&#xE995;" />
+                        </StackPanel>
+                    </Button>
+
                     <ItemsControl x:Name="TrayList"
                                   Focusable="False"
                                   VerticalAlignment="Center"
@@ -838,6 +858,20 @@
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </local:GlassCard>
+            </Border>
+        </Popup>
+
+        <Popup x:Name="QuickPopup"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=QuickButton}"
+               Opened="QuickPopup_OpenedOrClosed"
+               Closed="QuickPopup_OpenedOrClosed">
+            <Border Padding="20">
+                <local:QuickSettingsPanel x:Name="QuickPanel"
+                                          Opacity="0"
+                                          AllowDrop="False"
+                                          SizeChanged="PopupCard_SizeChanged" />
             </Border>
         </Popup>
 
