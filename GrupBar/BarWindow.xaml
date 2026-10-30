@@ -199,15 +199,9 @@
         </Style>
 
         <Style x:Key="Glass" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource IslandFill}" />
             <Setter Property="BorderBrush" Value="{StaticResource IslandStroke}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="15" />
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect BlurRadius="11" ShadowDepth="2" Direction="270" Opacity="0.5" />
-                </Setter.Value>
-            </Setter>
         </Style>
 
         <Style x:Key="Divider" TargetType="Border">
@@ -367,7 +361,29 @@
                     </Style.Triggers>
                 </Style>
             </Grid.Style>
-            <Border Style="{StaticResource Glass}" />
+            <!-- Gölge yalnızca adanın dışında: içine düşerse camı karartır (kırpma kodda) -->
+            <Grid x:Name="ShadowHost" Margin="-8" IsHitTestVisible="False" SizeChanged="ShadowHost_SizeChanged">
+                <Border Margin="8" CornerRadius="15" Background="Black">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.55" />
+                    </Border.Effect>
+                </Border>
+            </Grid>
+            <!-- Cam: arkadaki ekranın işlenmiş görüntüsü (GlassCapture). Bulanıklık miktarı buradaki Radius. -->
+            <Grid x:Name="GlassHost" IsHitTestVisible="False" SizeChanged="GlassHost_SizeChanged">
+                <!-- Rectangle: görüntü adanın boyutunu belirlemesin -->
+                <Rectangle Margin="-8" RenderOptions.BitmapScalingMode="Linear">
+                    <Rectangle.Fill>
+                        <ImageBrush x:Name="GlassBrush" Stretch="Fill" />
+                    </Rectangle.Fill>
+                    <Rectangle.Effect>
+                        <BlurEffect Radius="9" KernelType="Gaussian" RenderingBias="Performance" />
+                    </Rectangle.Effect>
+                </Rectangle>
+            </Grid>
+            <!-- Ton kodda: arka plana göre koyu cam ile açık cam arasında gezinir -->
+            <Border x:Name="IslandTint" Style="{StaticResource Glass}" />
+            <Border Margin="1" CornerRadius="14" Background="{StaticResource IslandSheen}" IsHitTestVisible="False" />
             <DockPanel Margin="4">
                 <StackPanel Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
                     <StackPanel.Style>
@@ -602,8 +618,12 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
+                        <!-- Parlak zeminde de okunsun -->
+                        <StackPanel.Effect>
+                            <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.6" />
+                        </StackPanel.Effect>
                         <TextBlock x:Name="TimeText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                        <TextBlock x:Name="DateText" Foreground="{StaticResource TextSecondary}" FontSize="10.5" HorizontalAlignment="Center">
+                        <TextBlock x:Name="DateText" Foreground="#DDE1EA" FontSize="10.5" HorizontalAlignment="Center">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource BarText}">
                                     <Style.Triggers>

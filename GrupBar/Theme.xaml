@@ -1,18 +1,21 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- Yüzeyler -->
-    <LinearGradientBrush x:Key="IslandFill" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#E6262A38" Offset="0" />
-        <GradientStop Color="#EE12141C" Offset="1" />
+    <!-- Ada camı: bulanıklığı arkadaki pencere, tonu BarWindow yapar (UpdateIslandTint) -->
+    <!-- Kenar ışığı: sol üstten vurur, altta hafifçe geri döner -->
+    <LinearGradientBrush x:Key="IslandStroke" StartPoint="0,0" EndPoint="0.35,1">
+        <GradientStop Color="#70FFFFFF" Offset="0" />
+        <GradientStop Color="#1FFFFFFF" Offset="0.5" />
+        <GradientStop Color="#33FFFFFF" Offset="1" />
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="IslandStroke" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#4DFFFFFF" Offset="0" />
-        <GradientStop Color="#14FFFFFF" Offset="0.45" />
-        <GradientStop Color="#0AFFFFFF" Offset="1" />
+    <!-- Camın üst yarısındaki yumuşak parlama -->
+    <LinearGradientBrush x:Key="IslandSheen" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#1AFFFFFF" Offset="0" />
+        <GradientStop Color="#00FFFFFF" Offset="0.6" />
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="PopupFill" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#F6232735" Offset="0" />
-        <GradientStop Color="#F815171F" Offset="1" />
+        <GradientStop Color="#F52A2B31" Offset="0" />
+        <GradientStop Color="#F81C1D21" Offset="1" />
     </LinearGradientBrush>
 
     <!-- Vurgu: mavi ile mor arasında tek imza rengi -->

@@ -8,6 +8,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ManagedShell;
 using ManagedShell.AppBar;
@@ -27,6 +28,18 @@ public partial class BarWindow : AppBarWindow
     /// <summary>Adanın ekran kenarıyla ve pencerelerle arasındaki boşluk.</summary>
     private const double FloatGap = 8;
     private const double IslandPadding = 4;
+    private const double IslandCornerRadius = 15;
+    private const double ShadowBleed = 8;
+    private const double GlassChangeThreshold = 0.004;
+    private const int GlassMaxIdleTicks = 75;
+    private const double TintDarkLuminance = 0.2;
+    private const double TintBrightLuminance = 0.6;
+    private const double TintSampleDistance = 24;
+    private const double TintSampleLength = 40;
+
+    // Bulanık görüntünün üstündeki ton: koyuda hafif aydınlık, parlakta yazı okunacak kadar koyu.
+    private static readonly Color TintOnDark = Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF);
+    private static readonly Color TintOnBright = Color.FromArgb(0x88, 0x10, 0x11, 0x14);
     private const double PanelShadowMargin = 20;
     private const double CompactThickness = 36;
     private const double EdgeRevealDepth = 2;
@@ -84,6 +97,16 @@ public partial class BarWindow : AppBarWindow
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
     private int _autoHideTicks;
+    private readonly DispatcherTimer _glassTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private WriteableBitmap? _glassBitmap;
+    private double _glassSignature = double.NaN;
+    private int _glassIdleTicks;
+    private bool _glassBusy;
+    private bool _recomposeToggle;
+    private readonly SolidColorBrush _tintBrush = new(TintOnDark);
+    private Color _tintTarget = TintOnDark;
+    private bool _barHidden;
+    private bool _fullScreenOnThisBar;
     private bool _cursorInBarZone;
     private bool _startMenuVisible;
 
@@ -118,6 +141,7 @@ public partial class BarWindow : AppBarWindow
             TrayOverflowList.ItemsSource = _trayOthers;
         }
 
+        Loaded += BarWindow_Loaded;
         Closed += BarWindow_Closed;
 
         UpdateMenuChecks();
@@ -164,6 +188,233 @@ public partial class BarWindow : AppBarWindow
     private static bool IsBatteryIcon(NotifyIcon icon)
     {
         return icon.GUID == BatteryIconGuid;
+    }
+
+    private void ShadowHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var outer = new RectangleGeometry(new Rect(e.NewSize));
+        var island = new RectangleGeometry(
+            new Rect(ShadowBleed, ShadowBleed, Math.Max(0, e.NewSize.Width - 2 * ShadowBleed), Math.Max(0, e.NewSize.Height - 2 * ShadowBleed)),
+            IslandCornerRadius, IslandCornerRadius);
+        ShadowHost.Clip = new CombinedGeometry(GeometryCombineMode.Exclude, outer, island);
+    }
+    #endregion
+
+    #region Glass
+    private void BarWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        IslandTint.Background = _tintBrush;
+        _glassTimer.Tick += GlassTimer_Tick;
+        _glassTimer.Start();
+        RefreshGlass();
+    }
+
+    private void GlassHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        GlassHost.Clip = new RectangleGeometry(new Rect(e.NewSize), IslandCornerRadius, IslandCornerRadius);
+        _glassSignature = double.NaN;
+    }
+
+    private void GlassTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_barHidden || _fullScreenOnThisBar)
+        {
+            return;
+        }
+
+        // Görüntü alırken ada yakalamadan bir an hariç tutuluyor; gereksiz yere yapma.
+        // Arkadaki değişimi adanın iki yanından anla, değişmese de seyrek tazele.
+        double signature;
+        try
+        {
+            signature = SampleBesideIsland();
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Oturum kilitliyken ekran okunamıyor.
+            return;
+        }
+
+        if (double.IsNaN(_glassSignature) || Math.Abs(signature - _glassSignature) > GlassChangeThreshold
+            || ++_glassIdleTicks >= GlassMaxIdleTicks)
+        {
+            _glassSignature = signature;
+            _glassIdleTicks = 0;
+            RefreshGlass();
+        }
+    }
+
+    private async void RefreshGlass()
+    {
+        if (_glassBusy || AllowClose || !TryGetIslandRestRect(out System.Drawing.Rectangle area))
+        {
+            return;
+        }
+
+        // Ada ekran dışındaysa hariç tutmaya gerek yok.
+        IntPtr exclude = _barHidden ? IntPtr.Zero : Handle;
+
+        _glassBusy = true;
+        try
+        {
+            GlassFrame? frame = await Task.Run(() => GlassCapture.Capture(area, exclude));
+            if (frame != null && !AllowClose)
+            {
+                ShowGlassFrame(frame);
+            }
+
+            // Durağan ekranda Windows yeniden çizmez ve hariç tutma kalkmış sayılmaz; ada ekran görüntülerinde
+            // çıkmaz olur. Pencereyi yeniden çizdirerek kaldır.
+            if (exclude != IntPtr.Zero)
+            {
+                ForceRecompose();
+            }
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Oturum kilitliyken ekran alınamıyor; sonraki denemede düzelir.
+        }
+        finally
+        {
+            _glassBusy = false;
+        }
+    }
+
+    private void ForceRecompose()
+    {
+        _recomposeToggle = !_recomposeToggle;
+        BarRoot.Opacity = _recomposeToggle ? 0.999 : 1;
+    }
+
+    private void ShowGlassFrame(GlassFrame frame)
+    {
+        if (_glassBitmap == null || _glassBitmap.PixelWidth != frame.Width || _glassBitmap.PixelHeight != frame.Height)
+        {
+            _glassBitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr32, null);
+            GlassBrush.ImageSource = _glassBitmap;
+        }
+
+        _glassBitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Pixels, frame.Width * 4, 0);
+        ApplyTint(frame.Luminance);
+    }
+
+    private void ApplyTint(double luminance)
+    {
+        // Koyu arka planda cam hafifçe aydınlatır, parlakta koyulaşır; beyaz yazı her zaman okunsun.
+        double t = Math.Clamp((luminance - TintDarkLuminance) / (TintBrightLuminance - TintDarkLuminance), 0, 1);
+        Color target = Lerp(TintOnDark, TintOnBright, t);
+
+        if (ColorDistance(target, _tintTarget) < 6)
+        {
+            return;
+        }
+
+        _tintTarget = target;
+        _tintBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(target, TimeSpan.FromMilliseconds(350)));
+    }
+
+    private bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
+    {
+        area = System.Drawing.Rectangle.Empty;
+        if (!IsLoaded || MainIsland.ActualWidth <= 0 || MainIsland.ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        // Kayarken ya da gizliyken de adanın duracağı yeri ver.
+        var slide = (TranslateTransform)BarRoot.RenderTransform;
+        Point origin = MainIsland.PointToScreen(new Point(0, 0));
+        area = new System.Drawing.Rectangle(
+            (int)Math.Round(origin.X - slide.X * DpiScale),
+            (int)Math.Round(origin.Y - slide.Y * DpiScale),
+            (int)Math.Round(MainIsland.ActualWidth * DpiScale),
+            (int)Math.Round(MainIsland.ActualHeight * DpiScale));
+        area.Intersect(Screen.Bounds);
+        return !area.IsEmpty;
+    }
+
+    private double SampleBesideIsland()
+    {
+        if (!TryGetIslandRestRect(out System.Drawing.Rectangle island))
+        {
+            return _glassSignature;
+        }
+
+        // Pencerenin adanın iki yanındaki kısmı saydam; görünen, adanın arkasıyla aynı sıradaki şeydir. Gölgeden uzak oku.
+        int reach = (int)Math.Round(TintSampleDistance * DpiScale);
+        int length = (int)Math.Round(TintSampleLength * DpiScale);
+        System.Drawing.Rectangle first, second;
+        if (Orientation == Orientation.Horizontal)
+        {
+            first = new System.Drawing.Rectangle(island.Left - reach - length, island.Top, length, island.Height);
+            second = new System.Drawing.Rectangle(island.Right + reach, island.Top, length, island.Height);
+        }
+        else
+        {
+            first = new System.Drawing.Rectangle(island.Left, island.Top - reach - length, island.Width, length);
+            second = new System.Drawing.Rectangle(island.Left, island.Bottom + reach, island.Width, length);
+        }
+
+        first.Intersect(Screen.Bounds);
+        second.Intersect(Screen.Bounds);
+
+        double total = 0;
+        foreach (System.Drawing.Rectangle area in new[] { first, second })
+        {
+            if (!area.IsEmpty)
+            {
+                total += GlassCapture.AverageLuminance(area);
+            }
+        }
+        return total;
+    }
+
+    private static Color Lerp(Color from, Color to, double t)
+    {
+        return Color.FromArgb(
+            (byte)(from.A + (to.A - from.A) * t),
+            (byte)(from.R + (to.R - from.R) * t),
+            (byte)(from.G + (to.G - from.G) * t),
+            (byte)(from.B + (to.B - from.B) * t));
+    }
+
+    private static int ColorDistance(Color a, Color b)
+    {
+        return Math.Abs(a.A - b.A) + Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+    }
+
+    protected override void OnAutoHideAnimationBegin(bool isHiding)
+    {
+        base.OnAutoHideAnimationBegin(isHiding);
+
+        // Açılırken arkası taze olsun; ada henüz ekran dışında, görüntüye karışmaz.
+        if (!isHiding && _barHidden)
+        {
+            RefreshGlass();
+        }
+        _barHidden = false;
+    }
+
+    protected override void OnAutoHideAnimationComplete(bool isHiding)
+    {
+        base.OnAutoHideAnimationComplete(isHiding);
+
+        _barHidden = isHiding;
+    }
+
+    protected override void OnFullScreenEnter(FullScreenApp app)
+    {
+        base.OnFullScreenEnter(app);
+
+        // Temel sınıf bazı pencereleri tam ekran saymıyor; gerçekten geri çekildiyse görüntü almayı bırak.
+        _fullScreenOnThisBar = !Topmost;
+    }
+
+    protected override void OnFullScreenLeave()
+    {
+        base.OnFullScreenLeave();
+
+        _fullScreenOnThisBar = false;
     }
     #endregion
 
@@ -502,6 +753,7 @@ public partial class BarWindow : AppBarWindow
         _settings.PropertyChanged -= Settings_PropertyChanged;
         _clockTimer.Stop();
         _autoHideTimer.Stop();
+        _glassTimer.Stop();
 
         TaskList.ItemsSource = null;
         (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();

@@ -68,6 +68,7 @@ public sealed class AppSettings : INotifyPropertyChanged
         set => SetField(ref _autoHideBar, value);
     }
 
+
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();
 
     public ObservableCollection<AppGroup> Groups { get; set; } = new();
