@@ -140,6 +140,18 @@
             </StackPanel>
         </DataTemplate>
 
+        <Style x:Key="TilePage" TargetType="ItemsControl">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="ItemTemplate" Value="{StaticResource TileTemplate}" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" VerticalAlignment="Top" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Kaydırıcı: dolu kısım vurgu renginde, yuvarlak tutamaç -->
         <Style x:Key="RailFill" TargetType="RepeatButton">
             <Setter Property="Focusable" Value="False" />
@@ -380,13 +392,20 @@
                 <!-- Sayfalı kutular; tekerlek ya da noktalarla geçilir -->
                 <DockPanel Margin="16,16,8,4" Background="Transparent" MouseWheel="Tiles_MouseWheel">
                     <StackPanel x:Name="PageDots" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="4,0,0,14" />
-                    <ItemsControl x:Name="Tiles" Focusable="False" ItemTemplate="{StaticResource TileTemplate}" MinHeight="146">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="3" VerticalAlignment="Top" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
+                    <!-- Pencere: bir sayfa boyu. Sayfalar içinde alt alta durur, şerit kayar (ShowPage).
+                         Canvas şart: Grid şeridi kendi boyuna kırpar, ikinci sayfa boş görünür. -->
+                    <Canvas x:Name="TileViewport" Height="152" ClipToBounds="True">
+                        <ItemsControl x:Name="Pages" Focusable="False" Width="{Binding ActualWidth, ElementName=TileViewport}">
+                            <ItemsControl.RenderTransform>
+                                <TranslateTransform x:Name="PagesSlide" />
+                            </ItemsControl.RenderTransform>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ItemsControl Style="{StaticResource TilePage}" Height="152" ItemsSource="{Binding}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Canvas>
                 </DockPanel>
 
                 <Border Height="1" Background="{StaticResource DividerBrush}" />

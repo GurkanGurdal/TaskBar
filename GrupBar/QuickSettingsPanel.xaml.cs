@@ -7,7 +7,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Windows.Devices.Bluetooth;
@@ -32,6 +31,11 @@ public partial class QuickSettingsPanel : UserControl
     private const string NoNetwork = "";
     private const double PausedArtScale = 0.9;
 
+    private const int PageSlideMs = 300;
+    private const double TilePageHeight = 152;
+    private const double PageDotActiveScale = 2.2;
+    private const double PageDotIdleOpacity = 0.4;
+
     /// <summary>Kapak arka planının opaklığı; camı örtmeyecek kadar hafif.</summary>
     private const double MediaBackdropOpacity = 0.35;
     private const int EqualizerFrameRate = 20;
@@ -52,6 +56,8 @@ public partial class QuickSettingsPanel : UserControl
     private readonly QuickTile _energyTile;
     private readonly QuickTile[][] _pages;
     private int _page;
+    private int _pageTransition;
+    private Border[] _pageDots = [];
     private bool _open;
 
     private Radio? _wifiRadio;
@@ -101,7 +107,9 @@ public partial class QuickSettingsPanel : UserControl
             }
         };
 
-        ShowPage(0);
+        Pages.ItemsSource = _pages;
+        CreatePageDots();
+        ShowPage(0, animate: false);
         _pollTimer.Tick += (_, _) =>
         {
             PollAudio();
@@ -156,7 +164,7 @@ public partial class QuickSettingsPanel : UserControl
     public async Task OpenAsync()
     {
         _open = true;
-        ShowPage(0);
+        ShowPage(0, animate: false);
 
         _audio = AudioEndpoint.TryOpen();
         VolumeRow.Visibility = _audio != null ? Visibility.Visible : Visibility.Collapsed;
@@ -214,28 +222,95 @@ public partial class QuickSettingsPanel : UserControl
     }
 
     #region Tiles
-    private void ShowPage(int page)
+    /// <summary>Windows'taki gibi: sayfalar alt alta durur, şerit tek parça kayar.</summary>
+    private void ShowPage(int page, bool animate = true)
     {
+        int from = _page;
         _page = page;
-        Tiles.ItemsSource = _pages[page];
+        _pageTransition++;
 
-        PageDots.Children.Clear();
+        UpdatePageDots(animate);
+
+        double target = -page * TilePageHeight;
+        if (!animate || from == page || !SystemParameters.ClientAreaAnimation)
+        {
+            PagesSlide.BeginAnimation(TranslateTransform.YProperty, null);
+            PagesSlide.Y = target;
+            Pages.CacheMode = null;
+            return;
+        }
+
+        // Kayarken şerit önbellekten çizilsin: kutular her karede yeniden çizilmez, kare düşmez.
+        int transition = _pageTransition;
+        Pages.CacheMode = new BitmapCache(VisualTreeHelper.GetDpi(this).DpiScaleX);
+
+        var slide = new DoubleAnimation(target, TimeSpan.FromMilliseconds(PageSlideMs))
+        {
+            // Basar basmaz hareket etsin; yavaş başlayan eğri gecikme gibi hissediliyor.
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        slide.Completed += (_, _) =>
+        {
+            // Durunca önbellek kalksın, yazılar keskin kalsın.
+            if (transition == _pageTransition)
+            {
+                Pages.CacheMode = null;
+            }
+        };
+        PagesSlide.BeginAnimation(TranslateTransform.YProperty, slide);
+    }
+
+    /// <summary>Etkin nokta parlar ve uzar. Yerleşimi değil yalnızca çizimi değiştirir, kaymayı aksatmaz.</summary>
+    private void UpdatePageDots(bool animate)
+    {
+        for (int i = 0; i < _pageDots.Length; i++)
+        {
+            Border dot = _pageDots[i];
+            var stretch = (ScaleTransform)dot.RenderTransform;
+            double scale = i == _page ? PageDotActiveScale : 1;
+            double opacity = i == _page ? 1 : PageDotIdleOpacity;
+
+            if (animate && SystemParameters.ClientAreaAnimation)
+            {
+                var duration = TimeSpan.FromMilliseconds(PageSlideMs);
+                stretch.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale, duration));
+                dot.BeginAnimation(OpacityProperty, new DoubleAnimation(opacity, duration));
+            }
+            else
+            {
+                stretch.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                dot.BeginAnimation(OpacityProperty, null);
+                stretch.ScaleY = scale;
+                dot.Opacity = opacity;
+            }
+        }
+    }
+
+    private void CreatePageDots()
+    {
+        _pageDots = new Border[_pages.Length];
         for (int i = 0; i < _pages.Length; i++)
         {
             int target = i;
-            var dot = new Ellipse
+            var dot = new Border
             {
                 Width = 5,
                 Height = 5,
-                Margin = new Thickness(2, 3, 2, 3),
-                Fill = new SolidColorBrush(i == page ? Colors.White : Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF))
+                CornerRadius = new CornerRadius(2.5),
+                Background = Brushes.White,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new ScaleTransform()
             };
-            dot.MouseDown += (_, e) =>
+
+            // Nokta küçük; tıklama alanı çevresini de kapsasın.
+            var hitArea = new Border { Background = Brushes.Transparent, Padding = new Thickness(4, 5, 4, 5), Child = dot };
+            hitArea.MouseDown += (_, e) =>
             {
                 ShowPage(target);
                 e.Handled = true;
             };
-            PageDots.Children.Add(dot);
+            _pageDots[i] = dot;
+            PageDots.Children.Add(hitArea);
         }
     }
 
