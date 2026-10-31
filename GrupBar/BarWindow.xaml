@@ -782,10 +782,10 @@
                                 Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
-                                <Setter Property="Margin" Value="1,0,8,0" />
+                                <Setter Property="Margin" Value="10,0,8,0" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
-                                        <Setter Property="Margin" Value="0,1,0,5" />
+                                        <Setter Property="Margin" Value="0,10,0,5" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
