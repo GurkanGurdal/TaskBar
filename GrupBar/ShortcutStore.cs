@@ -83,7 +83,7 @@ internal static class ShortcutStore
     }
 
     /// <summary>Başlat menüsündeki tüm uygulamalar: ad ve kimlik. Store dışındakiler de burada.</summary>
-    private static Dictionary<string, string> InstalledApps()
+    public static Dictionary<string, string> InstalledApps()
     {
         var apps = new Dictionary<string, string>(StringComparer.CurrentCultureIgnoreCase);
         try

@@ -619,8 +619,6 @@ public partial class QuickSettingsPanel : UserControl
 
     }
 
-    
-
     private void SubOption_Click(object sender, RoutedEventArgs e)
     {
         ((QuickOption)((FrameworkElement)sender).DataContext).Action();

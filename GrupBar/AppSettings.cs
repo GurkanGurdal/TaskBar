@@ -30,6 +30,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _showDate = true;
     private bool _hideWindowsTaskbar = true;
     private bool _autoHideBar;
+    private bool _customStartMenu = true;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -70,7 +71,17 @@ public sealed class AppSettings : INotifyPropertyChanged
     }
 
 
+    /// <summary>Başlat düğmesi ve Windows tuşu GrupBar'ın menüsünü açsın; kapalıyken Windows'unkini.</summary>
+    public bool CustomStartMenu
+    {
+        get => _customStartMenu;
+        set => SetField(ref _customStartMenu, value);
+    }
+
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();
+
+    /// <summary>Kayıtta hiç yoksa çubuktaki sabitlenenlerle başlar: Windows kendi listesini uygulamalara açmıyor.</summary>
+    public ObservableCollection<GroupItem> StartPinned { get; set; } = null!;
 
     public ObservableCollection<AppGroup> Groups { get; set; } = new();
 
@@ -114,7 +125,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// <summary>Eski kayıtlar ve silinmiş kısayollar için; yeni öğeler eklenirken zaten korunur.</summary>
     private bool SecureShortcuts()
     {
-        List<GroupItem> items = Pinned.Concat(Groups.SelectMany(group => group.Items)).ToList();
+        List<GroupItem> items = Pinned.Concat(StartPinned).Concat(Groups.SelectMany(group => group.Items)).ToList();
         bool changed = ShortcutStore.Repair(items);
 
         foreach (GroupItem item in items)
@@ -177,6 +188,9 @@ public sealed class AppSettings : INotifyPropertyChanged
 
         Pinned ??= new ObservableCollection<GroupItem>();
         RemoveInvalidItems(Pinned);
+
+        StartPinned ??= new ObservableCollection<GroupItem>(Pinned.Select(item => new GroupItem { Name = item.Name, Path = item.Path }));
+        RemoveInvalidItems(StartPinned);
 
         Groups ??= new ObservableCollection<AppGroup>();
         foreach (AppGroup group in Groups.Where(g => g == null).ToList())

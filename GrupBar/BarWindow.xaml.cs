@@ -3,11 +3,13 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -44,6 +46,8 @@ public partial class BarWindow : AppBarWindow
     private const double TintSampleDistance = 24;
     private const double TintSampleLength = 40;
     private const double PanelShadowMargin = 20;
+    private const double StartPanelHeight = 620;
+    private const double StartPanelScreenMargin = 40;
     private const int PreviewShowDelayMs = 350;
     private const int PreviewHideDelayMs = 250;
     private const int PanelStaggerMaxItems = 16;
@@ -111,6 +115,7 @@ public partial class BarWindow : AppBarWindow
     private readonly DispatcherTimer _previewHideTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewHideDelayMs) };
     private Button? _previewButton;
     private readonly ScaleTransform _quickScale = new();
+    private readonly ScaleTransform _startScale = new();
     private readonly IDisposable? _volumeWatcher;
     private readonly GroupRunTracker? _runTracker;
     private Point? _tileDragStart;
@@ -175,6 +180,15 @@ public partial class BarWindow : AppBarWindow
         QuickPanel.RenderTransform = _quickScale;
         QuickPanel.AllWindows = () => shellManager.Tasks.GroupedWindows.OfType<ApplicationWindow>();
         QuickPanel.CloseRequested += ClosePanel;
+
+        StartPanel.RenderTransform = _startScale;
+        StartPanel.Attach(settings);
+        StartPanel.CloseRequested += ClosePanel;
+        StartPanel.LaunchFailed += item => ReportFailures([item]);
+        StartPanel.PinToBarRequested += item => AddItems(_settings.Pinned, [item]);
+        StartPanel.WindowsStartRequested += OpenWindowsStartMenu;
+        // Çubuk gizliyken de doğru yerde açılsın: düğme ekran dışında olabilir, pencere değil.
+        StartPopup.PlacementTarget = this;
 
         // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
         if (Screen.Primary)
@@ -322,6 +336,11 @@ public partial class BarWindow : AppBarWindow
             if (QuickPopup.IsOpen)
             {
                 _ = QuickPanel.RefreshGlassAsync(animateTint: true);
+            }
+
+            if (StartPopup.IsOpen)
+            {
+                _ = StartPanel.RefreshGlassAsync(animateTint: true);
             }
         }
     }
@@ -488,7 +507,7 @@ public partial class BarWindow : AppBarWindow
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
         return base.ShouldAllowAutoHide() && !_cursorInBarZone && GroupPanel?.IsOpen != true && TrayPopup?.IsOpen != true
-            && PreviewPopup?.IsOpen != true && QuickPopup?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
+            && PreviewPopup?.IsOpen != true && QuickPopup?.IsOpen != true && StartPopup?.IsOpen != true && !(_startMenuVisible && Screen.Primary);
     }
 
     private async void Popup_OpenedOrClosed(object? sender, EventArgs e)
@@ -627,6 +646,12 @@ public partial class BarWindow : AppBarWindow
 
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_settings.CustomStartMenu)
+        {
+            ToggleStartPanel();
+            return;
+        }
+
         ClosePanel();
 
         bool wasOpen = _startMenuWasOpen;
@@ -643,6 +668,81 @@ public partial class BarWindow : AppBarWindow
         ShellHelper.ShowStartContextMenu();
         e.Handled = true;
     }
+
+    public bool IsStartPanelOpen => StartPopup.IsOpen;
+
+    public Task WarmStartPanelAsync() => StartPanel.WarmAsync();
+
+    /// <summary>GrupBar'ın Başlat menüsünü açar ya da kapatır; Başlat düğmesi ve Windows tuşu.</summary>
+    public void ToggleStartPanel()
+    {
+        bool wasOpen = StartPopup.IsOpen;
+        ClosePanel();
+        if (wasOpen)
+        {
+            return;
+        }
+
+        // Küçük ekranda kart ekrana sığsın.
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        StartPanel.CardHeight = Math.Min(StartPanelHeight, Screen.Bounds.Height / dpi.DpiScaleY - DesiredHeight - StartPanelScreenMargin);
+        PlacePopup(StartPopup, StartPanel);
+        ForceForeground();
+        StartPopup.IsOpen = true;
+    }
+
+    private async void StartPopup_OpenedOrClosed(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(AllowAutoHide));
+
+        if (!StartPopup.IsOpen)
+        {
+            StartPanel.Close();
+            StartPanel.BeginAnimation(OpacityProperty, null);
+            return;
+        }
+
+        StartPanel.FocusSearch();
+        await StartPanel.OpenAsync();
+
+        if (StartPopup.IsOpen)
+        {
+            AnimatePopupIn(StartPanel, _startScale);
+        }
+    }
+
+    private static void OpenWindowsStartMenu()
+    {
+        WinKeyWatcher.AllowNativeStart();
+        ShellHelper.ShowStartMenu();
+    }
+
+    /// <summary>
+    /// Windows tuşu kancadan geliyor: Windows, o tuşu bu sürece vermiş saymıyor ve öne geçmeye izin vermeyebilir.
+    /// Öndeki pencerenin girdisine bir an bağlanmak bu izni sağlar.
+    /// </summary>
+    private void ForceForeground()
+    {
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        uint foregroundThread = NativeMethods.GetWindowThreadProcessId(foreground, out _);
+        uint thisThread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+        SetForegroundWindow(new WindowInteropHelper(this).Handle);
+        if (attached)
+        {
+            AttachThreadInput(thisThread, foregroundThread, false);
+        }
+        Activate();
+    }
+
+    [DllImport("user32")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32")]
+    private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
+    [DllImport("kernel32")]
+    private static extern uint GetCurrentThreadId();
 
     private static bool IsStartMenuOpen()
     {
@@ -1237,7 +1337,7 @@ public partial class BarWindow : AppBarWindow
         var button = (Button)sender;
         _previewHideTimer.Stop();
 
-        if (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        if (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || button.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -1401,8 +1501,8 @@ public partial class BarWindow : AppBarWindow
 
     private void PlacePopup(Popup popup, FrameworkElement card)
     {
-        // Kart gölge payı kadar içeride; düğmeye ortalı ve adanın yanında süzülür.
-        double gap = IslandPadding + FloatGap - PanelShadowMargin;
+        // Kart gölge payı kadar içeride; düğmeye ortalı ve adanın yanında süzülür. Pencereye bağlı kart zaten adadan FloatGap uzakta.
+        double gap = popup.PlacementTarget == this ? -PanelShadowMargin : IslandPadding + FloatGap - PanelShadowMargin;
         double popupWidth = card.Width + 2 * PanelShadowMargin;
         double popupHeight = card.ActualHeight + 2 * PanelShadowMargin;
 
@@ -1434,6 +1534,10 @@ public partial class BarWindow : AppBarWindow
         else if (sender == QuickPanel)
         {
             PlacePopup(QuickPopup, QuickPanel);
+        }
+        else if (sender == StartPanel)
+        {
+            PlacePopup(StartPopup, StartPanel);
         }
         else
         {
@@ -1476,6 +1580,7 @@ public partial class BarWindow : AppBarWindow
         GroupPanel.IsOpen = false;
         TrayPopup.IsOpen = false;
         QuickPopup.IsOpen = false;
+        StartPopup.IsOpen = false;
         HidePreview();
     }
 
@@ -1497,7 +1602,7 @@ public partial class BarWindow : AppBarWindow
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen))
+        if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen))
         {
             ClosePanel();
             e.Handled = true;

@@ -1,0 +1,240 @@
+<UserControl x:Class="GrupBar.StartMenuPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GrupBar"
+             Width="640"
+             FontFamily="{StaticResource UiFont}"
+             Foreground="{StaticResource TextPrimary}"
+             TextOptions.TextRenderingMode="Grayscale">
+    <UserControl.Resources>
+        <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+        <Style x:Key="Glyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Icons}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="FooterButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="MinWidth" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SearchBoxStyle" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentFill}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" VerticalAlignment="Center" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="10,6,0,6" />
+        </Style>
+
+        <!-- Uygulama kutusu: klavyeyle seçilen vurgulu -->
+        <Style x:Key="StartTile" TargetType="Button">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="10">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ActiveBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="TileTemplate">
+            <Button Style="{StaticResource StartTile}"
+                    AutomationProperties.Name="{Binding Name}"
+                    ToolTip="{Binding Name}"
+                    Click="Tile_Click">
+                <Button.ContextMenu>
+                    <ContextMenu Opened="TileMenu_Opened">
+                        <MenuItem Header="Başlat'a sabitle" Click="PinToStart_Click" />
+                        <MenuItem Header="Başlat'tan kaldır" Click="UnpinFromStart_Click" />
+                        <MenuItem Header="Çubuğa sabitle" Click="PinToBar_Click" />
+                    </ContextMenu>
+                </Button.ContextMenu>
+                <StackPanel Margin="4,10,4,8">
+                    <Image Source="{Binding Icon}" Width="34" Height="34" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="11.5"
+                               Margin="0,7,0,0"
+                               TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+
+        <!-- Altı sütun: genişlik buna göre (StartMenuPanel.Columns) -->
+        <ItemsPanelTemplate x:Key="TilePanel">
+            <WrapPanel ItemWidth="102" />
+        </ItemsPanelTemplate>
+    </UserControl.Resources>
+
+    <local:GlassCard x:Name="Card" Opacity="1" CornerRadius="16">
+        <DockPanel x:Name="Body" Height="620">
+            <!-- Alt şerit: hesap, Gezgin, ayarlar, güç -->
+            <Border DockPanel.Dock="Bottom" Background="#1A000000" CornerRadius="0,0,15,15" Padding="14,7,12,7">
+                <DockPanel>
+                    <Button x:Name="PowerButton"
+                            DockPanel.Dock="Right"
+                            Style="{StaticResource FooterButton}"
+                            AutomationProperties.Name="Güç"
+                            ToolTip="Güç"
+                            Click="Power_Click">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Kilitle" Click="Lock_Click" />
+                                <MenuItem Header="Oturumu kapat" Click="SignOut_Click" />
+                                <Separator />
+                                <MenuItem Header="Uyku" Click="Sleep_Click" />
+                                <MenuItem Header="Yeniden başlat" Click="Restart_Click" />
+                                <MenuItem Header="Kapat" Click="ShutDown_Click" />
+                                <Separator />
+                                <MenuItem Header="Windows Başlat menüsünü aç" Click="WindowsStart_Click" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE7E8;" />
+                    </Button>
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource FooterButton}"
+                            AutomationProperties.Name="Ayarlar"
+                            ToolTip="Ayarlar"
+                            Click="Settings_Click">
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE713;" />
+                    </Button>
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource FooterButton}"
+                            AutomationProperties.Name="Dosya Gezgini"
+                            ToolTip="Dosya Gezgini"
+                            Click="Explorer_Click">
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE8B7;" />
+                    </Button>
+                    <Button Style="{StaticResource FooterButton}"
+                            HorizontalAlignment="Left"
+                            AutomationProperties.Name="Hesap ayarları"
+                            ToolTip="Hesap ayarları"
+                            Click="Account_Click">
+                        <StackPanel Orientation="Horizontal" Margin="6,0,10,0">
+                            <Grid Width="26" Height="26">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE77B;" />
+                                <Ellipse x:Name="AccountPicture" Visibility="Collapsed" />
+                            </Grid>
+                            <TextBlock x:Name="AccountName" FontSize="12.5" Margin="9,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </DockPanel>
+            </Border>
+
+            <!-- Arama: açılınca odak burada, yazmaya hemen başlanır -->
+            <Border DockPanel.Dock="Top"
+                    Margin="18,18,18,10"
+                    Height="40"
+                    Background="#14FFFFFF"
+                    BorderBrush="#26FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="10">
+                <DockPanel Margin="13,0,10,0">
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" FontSize="14" Opacity="0.75" Margin="0,0,10,0" Text="&#xE721;" />
+                    <Grid>
+                        <TextBlock x:Name="SearchHint"
+                                   Text="Uygulama ara"
+                                   FontSize="14"
+                                   Opacity="0.55"
+                                   VerticalAlignment="Center"
+                                   IsHitTestVisible="False" />
+                        <TextBox x:Name="SearchBox"
+                                 Style="{StaticResource SearchBoxStyle}"
+                                 AutomationProperties.Name="Uygulama ara"
+                                 TextChanged="SearchBox_TextChanged"
+                                 PreviewKeyDown="SearchBox_PreviewKeyDown" />
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <ScrollViewer x:Name="Scroller"
+                          Focusable="False"
+                          Margin="14,0,14,6"
+                          VerticalScrollBarVisibility="Hidden"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <StackPanel x:Name="PinnedSection">
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Sabitlenenler" />
+                        <ItemsControl x:Name="PinnedList"
+                                      Focusable="False"
+                                      ItemTemplate="{StaticResource TileTemplate}"
+                                      ItemsPanel="{StaticResource TilePanel}" />
+                        <Border Height="1" Margin="10,10,10,8" Background="{StaticResource DividerBrush}" />
+                    </StackPanel>
+                    <TextBlock x:Name="AppsTitle" Style="{StaticResource SectionTitle}" Text="Tüm uygulamalar" />
+                    <ItemsControl x:Name="AppList"
+                                  Focusable="False"
+                                  ItemTemplate="{StaticResource TileTemplate}"
+                                  ItemsPanel="{StaticResource TilePanel}" />
+                    <TextBlock x:Name="NoResults"
+                               Text="Uygulama bulunamadı"
+                               Opacity="0.7"
+                               FontSize="12.5"
+                               Margin="10,4,0,8"
+                               Visibility="Collapsed" />
+                    <Button x:Name="WindowsSearchButton"
+                            Style="{StaticResource FooterButton}"
+                            HorizontalAlignment="Left"
+                            Margin="4,4,0,8"
+                            Visibility="Collapsed"
+                            Click="WindowsSearch_Click">
+                        <StackPanel Orientation="Horizontal" Margin="8,0,12,0">
+                            <TextBlock Style="{StaticResource Glyph}" FontSize="13" Margin="0,0,9,0" Text="&#xE721;" />
+                            <TextBlock x:Name="WindowsSearchText" FontSize="12.5" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </local:GlassCard>
+</UserControl>

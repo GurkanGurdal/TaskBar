@@ -19,6 +19,7 @@ public partial class App : Application
     private readonly Mutex _instanceMutex;
     private readonly EventWaitHandle _showSettingsSignal;
     private readonly List<BarWindow> _bars = new();
+    private WinKeyWatcher? _winKeyWatcher;
     private readonly DispatcherTimer _displayChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private AppSettings? _settings;
     private SettingsWindow? _settingsWindow;
@@ -106,6 +107,8 @@ public partial class App : Application
 
         OpenBars();
 
+        ApplyStartMenuMode();
+
         _displayChangeTimer.Tick += DisplayChangeTimer_Tick;
 
         _trayIcon = new TrayIcon(OpenSettings, ExitGracefully);
@@ -128,6 +131,10 @@ public partial class App : Application
         {
             ApplyTaskbarMode(_settings!.HideWindowsTaskbar);
         }
+        else if (e.PropertyName == nameof(AppSettings.CustomStartMenu))
+        {
+            ApplyStartMenuMode();
+        }
         else if (e.PropertyName == nameof(AppSettings.AutoHideBar))
         {
             // Saydamlık pencere açıldıktan sonra değişmiyor; çubuklar yeniden açılmalı. Değişiklik menüden
@@ -140,6 +147,43 @@ public partial class App : Application
         }
 
         _settings!.Save();
+    }
+
+    private void ApplyStartMenuMode()
+    {
+        _winKeyWatcher?.Dispose();
+        _winKeyWatcher = null;
+
+        if (_settings!.CustomStartMenu)
+        {
+            _winKeyWatcher = new WinKeyWatcher(() => Dispatcher.BeginInvoke(ToggleStartPanel));
+            PrepareStartPanels();
+        }
+    }
+
+    /// <summary>Windows tuşu ilk seferde beklemesin; açılışı yavaşlatmamak için boşta yapılır.</summary>
+    private async void PrepareStartPanels()
+    {
+        await StartMenuPanel.PreloadAsync(_settings!);
+
+        foreach (BarWindow bar in _bars.ToList())
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            await bar.WarmStartPanelAsync();
+        }
+    }
+
+    /// <summary>Açık olan varsa kapanır; yoksa imlecin bulunduğu ekrandaki çubukta açılır.</summary>
+    private void ToggleStartPanel()
+    {
+        if (_bars.FirstOrDefault(bar => bar.IsStartPanelOpen) is { } open)
+        {
+            open.ToggleStartPanel();
+            return;
+        }
+
+        System.Drawing.Rectangle screen = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).Bounds;
+        (_bars.FirstOrDefault(bar => bar.Screen.Bounds == screen) ?? _bars.FirstOrDefault())?.ToggleStartPanel();
     }
 
     public void OpenSettings()

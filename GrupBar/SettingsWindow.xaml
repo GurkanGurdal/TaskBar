@@ -46,6 +46,11 @@
                            Foreground="#606060"
                            TextWrapping="Wrap"
                            Text="Fareyi ekranın kenarına götürünce açılır." />
+                <CheckBox Content="GrupBar Başlat menüsünü kullan" Margin="0,16,0,0" IsChecked="{Binding CustomStartMenu}" />
+                <TextBlock Margin="20,2,0,0"
+                           Foreground="#606060"
+                           TextWrapping="Wrap"
+                           Text="Kapalıyken Başlat düğmesi ve Windows tuşu Windows'un kendi menüsünü açar." />
                 <CheckBox x:Name="ClockCheck" Content="Saati göster" Margin="0,16,0,0" IsChecked="{Binding ShowClock}" />
                 <CheckBox Content="Tarihi göster"
                           Margin="20,6,0,0"

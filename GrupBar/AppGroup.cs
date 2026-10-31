@@ -108,8 +108,8 @@ public sealed class GroupItem : INotifyPropertyChanged
     public const string StoreAppPrefix = @"shell:AppsFolder\";
 
     private ImageSource? _icon;
-
     private bool _iconRequested;
+    private bool _isHighlighted;
     private IReadOnlyList<ApplicationWindow> _windows = [];
     private ApplicationWindow? _lastFocused;
     private string? _executable;
@@ -122,31 +122,34 @@ public sealed class GroupItem : INotifyPropertyChanged
     public string Path { get; set; } = "";
 
     /// <summary>Uygulamanın kendi ikonu; arka planda yüklenir, hazır olunca haber verir.</summary>
-
     [JsonIgnore]
-
     public ImageSource? Icon
-
     {
-
         get
-
         {
-
             if (!_iconRequested)
-
             {
-
                 _iconRequested = true;
-
                 _ = LoadIconAsync();
-
             }
-
             return _icon;
-
         }
+    }
 
+
+    /// <summary>Başlat menüsünde klavyeyle seçili.</summary>
+    [JsonIgnore]
+    public bool IsHighlighted
+    {
+        get => _isHighlighted;
+        set
+        {
+            if (_isHighlighted != value)
+            {
+                _isHighlighted = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHighlighted)));
+            }
+        }
     }
 
     [JsonIgnore]
@@ -243,18 +246,11 @@ public sealed class GroupItem : INotifyPropertyChanged
     }
 
     private async Task LoadIconAsync()
-
     {
-
         string path = Path;
-
         _icon = await AppIcon.LoadAsync(path);
-
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Icon)));
-
     }
-
-    
 
     public static GroupItem FromPath(string path)
     {

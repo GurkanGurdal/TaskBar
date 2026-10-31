@@ -883,6 +883,19 @@
             </Border>
         </Popup>
 
+        <Popup x:Name="StartPopup"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               Opened="StartPopup_OpenedOrClosed"
+               Closed="StartPopup_OpenedOrClosed">
+            <Border Padding="20">
+                <local:StartMenuPanel x:Name="StartPanel"
+                                      Opacity="0"
+                                      AllowDrop="False"
+                                      SizeChanged="PopupCard_SizeChanged" />
+            </Border>
+        </Popup>
+
         <!-- Çubuktaki uygulamanın üzerine gelince pencerelerinin canlı önizlemesi -->
         <Popup x:Name="PreviewPopup"
                StaysOpen="True"
