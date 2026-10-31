@@ -29,6 +29,7 @@ namespace GrupBar;
 public partial class QuickSettingsPanel : UserControl
 {
     private const string Mute = "";
+    private const string NoNetwork = "";
     private const byte KeyWin = 0x5B;
     private const byte KeyControl = 0x11;
     private const uint KeyRelease = 2;
@@ -107,6 +108,28 @@ public partial class QuickSettingsPanel : UserControl
 
         float level = audio.Level;
         return level <= 0 ? "" : level < 0.34f ? "" : level < 0.67f ? "" : "";
+    }
+
+    /// <summary>Çubuktaki ikon için: bağlantı türü ve internete çıkıp çıkamadığı.</summary>
+    internal static string NetworkGlyph()
+    {
+        try
+        {
+            ConnectionProfile? profile = NetworkInformation.GetInternetConnectionProfile();
+            if (profile == null)
+            {
+                return NoNetwork;
+            }
+
+            bool hasInternet = profile.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
+            return profile.IsWlanConnectionProfile
+                ? hasInternet ? "" : ""
+                : hasInternet ? "" : "";
+        }
+        catch (COMException)
+        {
+            return NoNetwork;
+        }
     }
 
     /// <summary>Durumu okur, görüntüyü alır. Bittiğinde panel gösterilmeye hazırdır.</summary>

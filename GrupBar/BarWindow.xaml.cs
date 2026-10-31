@@ -101,6 +101,7 @@ public partial class BarWindow : AppBarWindow
     private readonly DispatcherTimer _previewHideTimer = new() { Interval = TimeSpan.FromMilliseconds(PreviewHideDelayMs) };
     private Button? _previewButton;
     private readonly ScaleTransform _quickScale = new();
+    private readonly IDisposable? _volumeWatcher;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -148,6 +149,12 @@ public partial class BarWindow : AppBarWindow
         if (!Screen.Primary)
         {
             ((Panel)QuickButton.Parent).Children.Remove(QuickButton);
+        }
+        else
+        {
+            // İkonlar değişince hemen güncellensin; saatin dakikalık yenilemesi kaçan olaya karşı kalır.
+            _volumeWatcher = AudioEndpoint.Watch(UpdateVolumeGlyph);
+            Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
         }
         QuickPanel.RenderTransform = _quickScale;
         QuickPanel.AllWindows = () => shellManager.Tasks.GroupedWindows.OfType<ApplicationWindow>();
@@ -747,17 +754,20 @@ public partial class BarWindow : AppBarWindow
             return;
         }
 
-        QuickVolumeGlyph.Text = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
+        UpdateVolumeGlyph();
+        QuickNetworkGlyph.Text = QuickSettingsPanel.NetworkGlyph();
+    }
 
-        try
-        {
-            var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
-            QuickNetworkGlyph.Text = profile == null ? "" : profile.IsWlanConnectionProfile ? "" : "";
-        }
-        catch (System.Runtime.InteropServices.COMException)
-        {
-            QuickNetworkGlyph.Text = "";
-        }
+    private void UpdateVolumeGlyph()
+    {
+        QuickVolumeGlyph.Text = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
+    }
+
+    private void NetworkInformation_NetworkStatusChanged(object sender)
+    {
+        // Windows'un kendi iş parçacığından gelir; profil okumak arayüzü bekletmesin.
+        string glyph = QuickSettingsPanel.NetworkGlyph();
+        Dispatcher.BeginInvoke(() => QuickNetworkGlyph.Text = glyph);
     }
 
     private void TrayOverflowButton_Click(object sender, RoutedEventArgs e)
@@ -863,6 +873,9 @@ public partial class BarWindow : AppBarWindow
 
         _previewShowTimer.Stop();
         _previewHideTimer.Stop();
+
+        _volumeWatcher?.Dispose();
+        Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
 
         TaskList.ItemsSource = null;
         ((INotifyCollectionChanged)_taskWindows).CollectionChanged -= TaskWindows_CollectionChanged;
