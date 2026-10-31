@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -29,6 +30,13 @@ namespace GrupBar;
 public partial class QuickSettingsPanel : UserControl
 {
     private const string NoNetwork = "";
+    private const double PausedArtScale = 0.9;
+    private const int EqualizerFrameRate = 20;
+    private static readonly int[] EqualizerPeriodsMs = { 430, 560, 370 };
+
+    /// <summary>Bir kapağın "renkli" sayılması için piksel başına en az doygunluk ağırlığı.</summary>
+    private const double MinAccentWeight = 8;
+    private const double MinAccentLuma = 165;
     private const byte KeyWin = 0x5B;
     private const byte KeyControl = 0x11;
     private const uint KeyRelease = 2;
@@ -53,6 +61,12 @@ public partial class QuickSettingsPanel : UserControl
 
     private MediaManager? _mediaManager;
     private MediaSession? _mediaSession;
+    private string? _mediaTrack;
+    private bool _mediaPlaying;
+    private TimeSpan _mediaStart;
+    private TimeSpan _mediaDuration;
+    private TimeSpan _mediaPosition;
+    private DateTimeOffset _mediaPositionAt;
 
     public QuickSettingsPanel()
     {
@@ -85,7 +99,11 @@ public partial class QuickSettingsPanel : UserControl
         };
 
         ShowPage(0);
-        _pollTimer.Tick += (_, _) => PollAudio();
+        _pollTimer.Tick += (_, _) =>
+        {
+            PollAudio();
+            TickMediaProgress();
+        };
 
         // Boş yere tıklamak çubuğun fare olayına gidip paneli kapatmasın.
         MouseDown += (_, e) => e.Handled = true;
@@ -581,6 +599,7 @@ public partial class QuickSettingsPanel : UserControl
         {
             _mediaSession.MediaPropertiesChanged -= MediaSession_Changed;
             _mediaSession.PlaybackInfoChanged -= MediaSession_Changed;
+            _mediaSession.TimelinePropertiesChanged -= MediaSession_TimelineChanged;
         }
 
         _mediaSession = session;
@@ -589,7 +608,184 @@ public partial class QuickSettingsPanel : UserControl
         {
             _mediaSession.MediaPropertiesChanged += MediaSession_Changed;
             _mediaSession.PlaybackInfoChanged += MediaSession_Changed;
+            _mediaSession.TimelinePropertiesChanged += MediaSession_TimelineChanged;
         }
+        else
+        {
+            SetPlayingMotion(false);
+        }
+    }
+
+    private void MediaSession_TimelineChanged(MediaSession sender, TimelinePropertiesChangedEventArgs args)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_open)
+            {
+                UpdateMediaTimeline();
+            }
+        });
+    }
+
+    /// <summary>Uygulama konumu seyrek bildiriyor; aradaki süre çalarken buradan sayılır.</summary>
+    private void UpdateMediaTimeline()
+    {
+        if (_mediaSession == null)
+        {
+            return;
+        }
+
+        try
+        {
+            GlobalSystemMediaTransportControlsSessionTimelineProperties timeline = _mediaSession.GetTimelineProperties();
+            _mediaStart = timeline.StartTime;
+            _mediaDuration = timeline.EndTime - timeline.StartTime;
+            _mediaPosition = timeline.Position;
+            _mediaPositionAt = timeline.LastUpdatedTime;
+
+            MediaTimeline.Visibility = _mediaDuration > TimeSpan.Zero ? Visibility.Visible : Visibility.Collapsed;
+            if (_mediaDuration > TimeSpan.Zero)
+            {
+                _updatingSliders = true;
+                MediaProgress.Maximum = _mediaDuration.TotalSeconds;
+                _updatingSliders = false;
+            }
+            TickMediaProgress();
+        }
+        catch (COMException)
+        {
+            MediaTimeline.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void TickMediaProgress()
+    {
+        if (_mediaDuration <= TimeSpan.Zero || MediaProgress.IsMouseCaptureWithin)
+        {
+            return;
+        }
+
+        TimeSpan elapsed = _mediaPosition - _mediaStart;
+        if (_mediaPlaying)
+        {
+            elapsed += DateTimeOffset.Now - _mediaPositionAt;
+        }
+        elapsed = elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed > _mediaDuration ? _mediaDuration : elapsed;
+
+        _updatingSliders = true;
+        MediaProgress.Value = elapsed.TotalSeconds;
+        _updatingSliders = false;
+        ShowMediaTimes(elapsed);
+    }
+
+    private void ShowMediaTimes(TimeSpan elapsed)
+    {
+        MediaElapsed.Text = FormatTime(elapsed);
+        MediaRemaining.Text = "-" + FormatTime(_mediaDuration - elapsed);
+    }
+
+    private static string FormatTime(TimeSpan time)
+    {
+        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
+    }
+
+    private void MediaProgress_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Sürüklerken süre elle gösterilir; konum bırakınca gönderilir.
+        if (!_updatingSliders)
+        {
+            ShowMediaTimes(TimeSpan.FromSeconds(e.NewValue));
+        }
+    }
+
+    private async void MediaProgress_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_mediaSession == null)
+        {
+            return;
+        }
+
+        // Kaydırıcı değerini bırakma olayından sonra da güncelliyor; onu bekle.
+        await Dispatcher.Yield(DispatcherPriority.Input);
+        TimeSpan target = _mediaStart + TimeSpan.FromSeconds(MediaProgress.Value);
+        _mediaPosition = target;
+        _mediaPositionAt = DateTimeOffset.Now;
+        await _mediaSession.TryChangePlaybackPositionAsync(target.Ticks);
+    }
+
+    /// <summary>Çalarken küçük çubuklar oynar ve kapak tam boyda durur; duraklayınca kapak hafifçe küçülür.</summary>
+    private void SetPlayingMotion(bool playing)
+    {
+        ScaleTransform[] bars = { MediaEq1, MediaEq2, MediaEq3 };
+        MediaEqualizer.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
+        for (int i = 0; i < bars.Length; i++)
+        {
+            DoubleAnimation? bounce = null;
+            if (playing)
+            {
+                bounce = new DoubleAnimation(0.25, 1, TimeSpan.FromMilliseconds(EqualizerPeriodsMs[i]))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                };
+
+                // Küçük bir süs için ekran hızında çizmeye gerek yok.
+                Timeline.SetDesiredFrameRate(bounce, EqualizerFrameRate);
+            }
+            bars[i].BeginAnimation(ScaleTransform.ScaleYProperty, bounce);
+        }
+
+        double scale = playing ? 1 : PausedArtScale;
+        var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 };
+        var duration = TimeSpan.FromMilliseconds(280);
+        MediaArtScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scale, duration) { EasingFunction = ease });
+        MediaArtScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale, duration) { EasingFunction = ease });
+    }
+
+    /// <summary>Yeni parçada kapak ve arka plan solarak gelir.</summary>
+    private void FadeInNewTrack()
+    {
+        var duration = TimeSpan.FromMilliseconds(320);
+        MediaArtHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration));
+        MediaBackdropImage.BeginAnimation(OpacityProperty, new DoubleAnimation(0, MediaBackdropImage.Opacity, duration));
+    }
+
+    /// <summary>
+    /// İlerleme çubuğunun rengi: kapağın canlı renklerinin ortalaması, koyu kalmasın diye açılmış.
+    /// Renksiz kapakta beyaz kalır.
+    /// </summary>
+    private static Color CoverAccent(BitmapSource cover)
+    {
+        var bitmap = new FormatConvertedBitmap(cover, PixelFormats.Bgra32, null, 0);
+        var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+        bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+
+        double red = 0, green = 0, blue = 0, total = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            int max = Math.Max(pixels[i], Math.Max(pixels[i + 1], pixels[i + 2]));
+            int min = Math.Min(pixels[i], Math.Min(pixels[i + 1], pixels[i + 2]));
+            double saturation = max == 0 ? 0 : (max - min) / (double)max;
+            double weight = saturation * saturation * max;
+            blue += pixels[i] * weight;
+            green += pixels[i + 1] * weight;
+            red += pixels[i + 2] * weight;
+            total += weight;
+        }
+
+        if (total < pixels.Length / 4.0 * MinAccentWeight)
+        {
+            return Color.FromRgb(0xF2, 0xF4, 0xF8);
+        }
+
+        (red, green, blue) = (red / total, green / total, blue / total);
+        double luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        double lift = luma >= MinAccentLuma ? 0 : (MinAccentLuma - luma) / (255 - luma);
+        return Color.FromRgb(
+            (byte)(red + (255 - red) * lift),
+            (byte)(green + (255 - green) * lift),
+            (byte)(blue + (255 - blue) * lift));
     }
 
     private void MediaSession_Changed<T>(MediaSession sender, T args)
@@ -619,18 +815,31 @@ public partial class QuickSettingsPanel : UserControl
                 GlobalSystemMediaTransportControlsSessionMediaProperties properties = await session.TryGetMediaPropertiesAsync();
                 GlobalSystemMediaTransportControlsSessionPlaybackInfo playback = session.GetPlaybackInfo();
 
+                string track = $"{properties.Title}\n{properties.Artist}";
+                bool newTrack = track != _mediaTrack;
+                _mediaTrack = track;
+
                 MediaTitle.Text = properties.Title;
                 MediaArtist.Text = properties.Artist;
-                ImageSource? art = await ReadThumbnailAsync(properties);
+                BitmapSource? art = await ReadThumbnailAsync(properties);
                 MediaArt.ImageSource = art;
                 MediaBackdrop.ImageSource = art;
                 MediaBackdropHost.Visibility = art != null ? Visibility.Visible : Visibility.Collapsed;
+                MediaProgress.Foreground = new SolidColorBrush(art != null ? CoverAccent(art) : Colors.White);
+                if (newTrack)
+                {
+                    FadeInNewTrack();
+                }
                 MediaAppName.Text = AppNameOf(session.SourceAppUserModelId);
                 MediaAppIcon.Source = FindMediaWindow(session.SourceAppUserModelId)?.Icon;
                 MediaAppGlyph.Visibility = MediaAppIcon.Source == null ? Visibility.Visible : Visibility.Collapsed;
                 MediaPlayGlyph.Text = playback.PlaybackStatus == PlaybackStatus.Playing ? "" : "";
                 MediaPrevious.IsEnabled = playback.Controls.IsPreviousEnabled;
                 MediaNext.IsEnabled = playback.Controls.IsNextEnabled;
+                MediaProgress.IsHitTestVisible = playback.Controls.IsPlaybackPositionEnabled;
+                _mediaPlaying = playback.PlaybackStatus == PlaybackStatus.Playing;
+                SetPlayingMotion(_mediaPlaying);
+                UpdateMediaTimeline();
                 MediaCard.Visibility = Visibility.Visible;
             }
             catch (COMException)
@@ -654,7 +863,7 @@ public partial class QuickSettingsPanel : UserControl
         MediaBackdropHost.Clip = new RectangleGeometry(new Rect(e.NewSize), radius, radius);
     }
 
-    private static async Task<ImageSource?> ReadThumbnailAsync(GlobalSystemMediaTransportControlsSessionMediaProperties properties)
+    private static async Task<BitmapSource?> ReadThumbnailAsync(GlobalSystemMediaTransportControlsSessionMediaProperties properties)
     {
         if (properties.Thumbnail == null)
         {
