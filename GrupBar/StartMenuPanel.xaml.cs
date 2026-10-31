@@ -80,15 +80,14 @@ public partial class StartMenuPanel : UserControl
     /// <summary>İlk açılış beklemesin diye liste ve simgeler önceden yüklenir.</summary>
     public static async Task PreloadAsync(AppSettings settings)
     {
-        // Sıra sırayla yüklenir: en önde görünenler uzun listenin arkasında beklemesin.
         foreach (GroupItem pin in settings.StartPinned.Concat(settings.StartRecents))
         {
-            _ = pin.Icon;
+            pin.PreloadIcon();
         }
 
         foreach (GroupItem app in await LoadAppsAsync())
         {
-            _ = app.Icon;
+            app.PreloadIcon();
         }
     }
 

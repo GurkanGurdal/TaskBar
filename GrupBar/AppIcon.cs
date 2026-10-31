@@ -25,14 +25,16 @@ internal static class AppIcon
     private const uint FileInfoIcon = 0x100;
     private const uint FileInfoLargeIcon = 0;
 
-    private static readonly BlockingCollection<(string Path, TaskCompletionSource<ImageSource?> Result)> Requests = new();
+    private static readonly BlockingCollection<(string Path, TaskCompletionSource<ImageSource?> Result)> Visible = new();
+    private static readonly BlockingCollection<(string Path, TaskCompletionSource<ImageSource?> Result)> Background = new();
     private static readonly Thread Worker = StartWorker();
 
     /// <summary>Dosya bulunamazsa genel uygulama ikonu döner.</summary>
-    public static Task<ImageSource?> LoadAsync(string path)
+    /// <param name="background">Önceden yükleme: ekranda istenen ikonlar bunun önüne geçer.</param>
+    public static Task<ImageSource?> LoadAsync(string path, bool background = false)
     {
         var result = new TaskCompletionSource<ImageSource?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Requests.Add((path, result));
+        (background ? Background : Visible).Add((path, result));
         return result.Task;
     }
 
@@ -44,8 +46,12 @@ internal static class AppIcon
     {
         var worker = new Thread(() =>
         {
-            foreach ((string path, TaskCompletionSource<ImageSource?> result) in Requests.GetConsumingEnumerable())
+            BlockingCollection<(string Path, TaskCompletionSource<ImageSource?> Result)>[] queues = [Visible, Background];
+            while (true)
             {
+                // Sıra önemli: ilk kuyrukta iş varsa o alınır.
+                BlockingCollection<(string, TaskCompletionSource<ImageSource?>)>.TakeFromAny(queues, out (string Path, TaskCompletionSource<ImageSource?> Result) request);
+                (string path, TaskCompletionSource<ImageSource?> result) = request;
                 try
                 {
                     result.SetResult(Load(path));

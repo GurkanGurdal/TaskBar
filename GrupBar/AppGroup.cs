@@ -287,10 +287,20 @@ public sealed class GroupItem : INotifyPropertyChanged
         }
     }
 
-    private async Task LoadIconAsync()
+    /// <summary>Ekranda henüz yokken yükler; görünen ikonları bekletmez.</summary>
+    public void PreloadIcon()
+    {
+        if (!_iconRequested)
+        {
+            _iconRequested = true;
+            _ = LoadIconAsync(background: true);
+        }
+    }
+
+    private async Task LoadIconAsync(bool background = false)
     {
         string path = Path;
-        _icon = await AppIcon.LoadAsync(path);
+        _icon = await AppIcon.LoadAsync(path, background);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Icon)));
     }
 

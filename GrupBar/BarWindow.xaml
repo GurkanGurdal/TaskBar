@@ -572,7 +572,8 @@
                                 DragEnter="GroupsButton_DragEnter"
                                 DragOver="GroupsButton_DragOver"
                                 Drop="GroupsButton_Drop">
-                            <Path Data="M1,4 L8,4 L10,6 L19,6 L19,17 L1,17 Z"
+                            <!-- Phosphor Icons, cards-three-fill (MIT): üst üste kartlar. Başlat'ın kareleriyle karışmasın diye ızgara değil. -->
+                            <Path Data="M224,104v96a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V104A16,16,0,0,1,48,88H208A16,16,0,0,1,224,104ZM56,72H200a8,8,0,0,0,0-16H56a8,8,0,0,0,0,16ZM72,40H184a8,8,0,0,0,0-16H72a8,8,0,0,0,0,16Z"
                                   Fill="{StaticResource FolderGradient}"
                                   Stretch="Uniform"
                                   Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
