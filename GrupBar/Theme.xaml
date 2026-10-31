@@ -19,11 +19,9 @@
         <GradientStop Color="#F81C1D21" Offset="1" />
     </LinearGradientBrush>
 
-    <!-- Vurgu: mavi ile mor arasında tek imza rengi -->
-    <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Color="#5CC6FF" Offset="0" />
-        <GradientStop Color="#9B7BFF" Offset="1" />
-    </LinearGradientBrush>
+    <!-- Vurgu: renk değil parlaklık. Açık durumlar düz kırık beyaz, üstünde koyu ikon; camın her renginde okunur. -->
+    <SolidColorBrush x:Key="AccentFill" Color="#F2F4F8" />
+    <SolidColorBrush x:Key="AccentInk" Color="#14161A" />
     <LinearGradientBrush x:Key="StartGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="#7FD8FF" Offset="0" />
         <GradientStop Color="#3B82FF" Offset="1" />
@@ -38,7 +36,7 @@
     </LinearGradientBrush>
     <SolidColorBrush x:Key="DividerBrush" Color="#24FFFFFF" />
     <SolidColorBrush x:Key="HoverBrush" Color="#1FFFFFFF" />
-    <SolidColorBrush x:Key="ActiveBrush" Color="#267FA8FF" />
+    <SolidColorBrush x:Key="ActiveBrush" Color="#2EFFFFFF" />
     <SolidColorBrush x:Key="TextPrimary" Color="#F4F6FB" />
     <SolidColorBrush x:Key="TextSecondary" Color="#A3ABBD" />
 
@@ -161,7 +159,7 @@
                             </Grid.ColumnDefinitions>
                             <Path x:Name="Check"
                                   Data="M0,4 L3.5,7.5 L10,0.5"
-                                  Stroke="{StaticResource AccentGradient}"
+                                  Stroke="{StaticResource AccentFill}"
                                   StrokeThickness="1.8"
                                   StrokeStartLineCap="Round"
                                   StrokeEndLineCap="Round"

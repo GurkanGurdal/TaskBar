@@ -256,12 +256,7 @@
                     </Setter>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="{x:Static tasks:ApplicationWindow+WindowState.Active}">
-                    <Setter Property="Background" Value="{StaticResource AccentGradient}" />
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#6AA8FF" BlurRadius="8" ShadowDepth="0" Opacity="0.9" />
-                        </Setter.Value>
-                    </Setter>
+                    <Setter Property="Background" Value="{StaticResource AccentFill}" />
                     <DataTrigger.EnterActions>
                         <BeginStoryboard>
                             <Storyboard>
@@ -993,9 +988,9 @@
                     <DockPanel Margin="2,0,0,0">
                         <Button DockPanel.Dock="Right"
                                 Content="Hepsini aç"
-                                Foreground="#0B1020"
+                                Foreground="{StaticResource AccentInk}"
                                 FontWeight="SemiBold"
-                                Background="{StaticResource AccentGradient}"
+                                Background="{StaticResource AccentFill}"
                                 Style="{StaticResource PanelGhostButton}"
                                 Margin="6,0,0,0"
                                 Click="OpenAllButton_Click" />

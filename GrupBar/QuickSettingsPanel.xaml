@@ -59,13 +59,21 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Plate" Property="Background" Value="#1FFFFFFF" />
                             </Trigger>
+                            <!-- Açık kutunun zemini beyaz: orada üzerine gelmek koyulaştırır -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                                    <Condition Binding="{Binding IsOn}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="Plate" Property="Background" Value="#14000000" />
+                            </MultiDataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsOn}" Value="True">
-                    <Setter Property="Foreground" Value="#0B1020" />
+                    <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -79,8 +87,8 @@
                             <Setter Property="BorderBrush" Value="#1FFFFFFF" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsOn}" Value="True">
-                                    <Setter Property="Background" Value="{StaticResource AccentGradient}" />
-                                    <Setter Property="BorderBrush" Value="#40FFFFFF" />
+                                    <Setter Property="Background" Value="{StaticResource AccentFill}" />
+                                    <Setter Property="BorderBrush" Value="{StaticResource AccentFill}" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -94,6 +102,22 @@
                                 Click="TileMore_Click">
                             <TextBlock Style="{StaticResource Glyph}" FontSize="11" Text="&#xE76C;" />
                         </Button>
+                        <!-- Kutunun iki bölümü arasındaki ince çizgi -->
+                        <Border DockPanel.Dock="Right"
+                                Width="1"
+                                Margin="0,11"
+                                Visibility="{Binding HasMore, Converter={StaticResource BoolToVisibility}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#26FFFFFF" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsOn}" Value="True">
+                                            <Setter Property="Background" Value="#26000000" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
                         <Button Style="{StaticResource TilePart}"
                                 AutomationProperties.Name="{Binding Label}"
                                 Click="TilePrimary_Click">
@@ -141,19 +165,20 @@
                     <ControlTemplate TargetType="Slider">
                         <Track x:Name="PART_Track" Height="22">
                             <Track.DecreaseRepeatButton>
-                                <RepeatButton Style="{StaticResource RailFill}" Background="{StaticResource AccentGradient}" Command="Slider.DecreaseLarge" />
+                                <RepeatButton Style="{StaticResource RailFill}" Background="{StaticResource AccentFill}" Command="Slider.DecreaseLarge" />
                             </Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource RailFill}" Background="#40FFFFFF" Command="Slider.IncreaseLarge" />
                             </Track.IncreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb Focusable="False" Width="18" Height="18">
+                                <Thumb Focusable="False" Width="16" Height="16">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Grid>
-                                                <Ellipse Fill="#F4F6FB" />
-                                                <Ellipse Margin="5" Fill="{StaticResource AccentGradient}" />
-                                            </Grid>
+                                            <Ellipse Fill="{StaticResource AccentFill}">
+                                                <Ellipse.Effect>
+                                                    <DropShadowEffect BlurRadius="5" ShadowDepth="1" Direction="270" Opacity="0.4" />
+                                                </Ellipse.Effect>
+                                            </Ellipse>
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>

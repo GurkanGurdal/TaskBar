@@ -25,7 +25,7 @@ namespace GrupBar;
 
 public partial class BarWindow : AppBarWindow
 {
-    private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromArgb(0x66, 0x7F, 0xA8, 0xFF));
+    private static readonly Brush DropHighlight = new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF));
 
     /// <summary>Adanın ekran kenarıyla ve pencerelerle arasındaki boşluk.</summary>
     private const double FloatGap = 8;
