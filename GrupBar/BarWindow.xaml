@@ -572,7 +572,7 @@
                                             <MenuItem Header="Sabitlemeyi kaldır" Click="UnpinItem_Click" />
                                         </ContextMenu>
                                     </Button.ContextMenu>
-                                    <Image Source="{Binding Shell.LargeIcon}"
+                                    <Image Source="{Binding Icon}" RenderOptions.BitmapScalingMode="HighQuality"
                                            Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                                            Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}" />
                                 </Button>
@@ -1122,7 +1122,7 @@
                                                             </Button.ContextMenu>
                                                             <Grid>
                                                                 <StackPanel Margin="4,10,4,0">
-                                                                    <Image Source="{Binding Shell.LargeIcon}" Width="38" Height="38" />
+                                                                    <Image Source="{Binding Icon}" Width="38" Height="38" RenderOptions.BitmapScalingMode="HighQuality" />
                                                                     <TextBlock Text="{Binding Name}"
                                                                                FontSize="11.5"
                                                                                TextAlignment="Center"

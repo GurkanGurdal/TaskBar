@@ -43,14 +43,6 @@ public partial class StoreAppPicker : Window
         return string.IsNullOrWhiteSpace(name) ? app.DisplayName : name;
     }
 
-    private void Window_Closed(object? sender, EventArgs e)
-    {
-        foreach (GroupItem app in _apps)
-        {
-            app.Dispose();
-        }
-    }
-
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         ApplyFilter();

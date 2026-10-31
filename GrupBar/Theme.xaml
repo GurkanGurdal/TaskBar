@@ -94,17 +94,9 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">
-                    <Border Margin="10"
-                            Padding="10,6"
-                            Background="{StaticResource PopupFill}"
-                            BorderBrush="{StaticResource IslandStroke}"
-                            BorderThickness="1"
-                            CornerRadius="9">
-                        <Border.Effect>
-                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.45" />
-                        </Border.Effect>
+                    <local:GlassCard x:Name="Card" Margin="14" Padding="10,6" CornerRadius="9">
                         <ContentPresenter />
-                    </Border>
+                    </local:GlassCard>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

@@ -18,6 +18,8 @@ public class GlassCard : ContentControl
     public static readonly DependencyProperty CornerRadiusProperty =
         DependencyProperty.Register(nameof(CornerRadius), typeof(CornerRadius), typeof(GlassCard), new PropertyMetadata(new CornerRadius(16)));
 
+    private const int ToolTipFadeMs = 110;
+
     private readonly ImageBrush _glassBrush = new() { Stretch = Stretch.Fill };
     private readonly SolidColorBrush _tintBrush = new(GlassTint.OnDark);
     private Grid? _shadowHost;
@@ -33,6 +35,30 @@ public class GlassCard : ContentControl
     {
         get => (CornerRadius)GetValue(CornerRadiusProperty);
         set => SetValue(CornerRadiusProperty, value);
+    }
+
+    /// <summary>İpuçları da bu camdan (şablonu Theme.xaml'da). Açan taraf olmadığı için belirme burada.</summary>
+    public static void AttachToToolTips()
+    {
+        EventManager.RegisterClassHandler(typeof(ToolTip), System.Windows.Controls.ToolTip.OpenedEvent, new RoutedEventHandler(ToolTip_Opened));
+    }
+
+    private static async void ToolTip_Opened(object sender, RoutedEventArgs e)
+    {
+        var tip = (ToolTip)sender;
+        tip.ApplyTemplate();
+        if (tip.Template?.FindName("Card", tip) is not GlassCard card)
+        {
+            return;
+        }
+
+        // Aynı ipucu yeniden açıldıysa eski görüntü görünmesin.
+        card.BeginAnimation(OpacityProperty, null);
+        await card.RefreshGlassAsync(animateTint: false);
+        if (tip.IsOpen)
+        {
+            card.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(ToolTipFadeMs)));
+        }
     }
 
     public override void OnApplyTemplate()

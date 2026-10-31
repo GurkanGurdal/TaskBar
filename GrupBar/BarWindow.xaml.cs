@@ -1117,7 +1117,6 @@ public partial class BarWindow : AppBarWindow
     internal void Unpin(GroupItem item)
     {
         _settings.Pinned.Remove(item);
-        item.Dispose();
         _settings.Save();
     }
 
@@ -1487,6 +1486,12 @@ public partial class BarWindow : AppBarWindow
 
     private void Window_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        // Açılır kartlardaki tıklama da mantıksal ağaçtan buraya ulaşır: kutuya sağ tık paneli kapatıyordu.
+        if (e.OriginalSource is Visual source && PresentationSource.FromVisual(source) != PresentationSource.FromVisual(this))
+        {
+            return;
+        }
+
         ClosePanel();
     }
 
@@ -1543,7 +1548,7 @@ public partial class BarWindow : AppBarWindow
         GroupItem item = ItemOf(sender);
 
         ClosePanel();
-        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.Path}\"") { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.LocationPath}\"") { UseShellExecute = true });
     }
 
     private static GroupItem ItemOf(object sender)
@@ -1674,7 +1679,6 @@ public partial class BarWindow : AppBarWindow
         GroupItem item = ItemOf(sender);
 
         OwnerOf(item)?.Items.Remove(item);
-        item.Dispose();
         _settings.Save();
     }
     #endregion
@@ -1749,7 +1753,6 @@ public partial class BarWindow : AppBarWindow
         {
             if (target.Any(existing => string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase)))
             {
-                item.Dispose();
                 continue;
             }
 

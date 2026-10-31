@@ -99,6 +99,7 @@ public partial class App : Application
         // Ekran değişince tüm çubuklar kapatılıp yeniden açılıyor; bu sırada uygulama kapanmamalı.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        GlassCard.AttachToToolTips();
         _settings = AppSettings.Load();
         _settings.PropertyChanged += Settings_PropertyChanged;
         ApplyTaskbarMode(_settings.HideWindowsTaskbar);

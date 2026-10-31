@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 using ManagedShell.ShellFolders;
+using System.Windows.Media;
 using ManagedShell.WindowsTasks;
 
 namespace GrupBar;
@@ -92,11 +93,6 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
     {
         _icon?.Dispose();
         _icon = null;
-
-        foreach (GroupItem item in Items)
-        {
-            item.Dispose();
-        }
     }
 
     public override string ToString() => Name;
@@ -107,11 +103,13 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
     }
 }
 
-public sealed class GroupItem : IDisposable, INotifyPropertyChanged
+public sealed class GroupItem : INotifyPropertyChanged
 {
     public const string StoreAppPrefix = @"shell:AppsFolder\";
 
-    private ShellItem? _shell;
+    private ImageSource? _icon;
+
+    private bool _iconRequested;
     private IReadOnlyList<ApplicationWindow> _windows = [];
     private ApplicationWindow? _lastFocused;
     private string? _executable;
@@ -123,8 +121,33 @@ public sealed class GroupItem : IDisposable, INotifyPropertyChanged
 
     public string Path { get; set; } = "";
 
+    /// <summary>Uygulamanın kendi ikonu; arka planda yüklenir, hazır olunca haber verir.</summary>
+
     [JsonIgnore]
-    public ShellItem Shell => _shell ??= new ShellItem(Path);
+
+    public ImageSource? Icon
+
+    {
+
+        get
+
+        {
+
+            if (!_iconRequested)
+
+            {
+
+                _iconRequested = true;
+
+                _ = LoadIconAsync();
+
+            }
+
+            return _icon;
+
+        }
+
+    }
 
     [JsonIgnore]
     public bool IsRunning => _windows.Count > 0;
@@ -219,6 +242,20 @@ public sealed class GroupItem : IDisposable, INotifyPropertyChanged
         }
     }
 
+    private async Task LoadIconAsync()
+
+    {
+
+        string path = Path;
+
+        _icon = await AppIcon.LoadAsync(path);
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Icon)));
+
+    }
+
+    
+
     public static GroupItem FromPath(string path)
     {
         string name = Directory.Exists(path)
@@ -226,13 +263,31 @@ public sealed class GroupItem : IDisposable, INotifyPropertyChanged
             : System.IO.Path.GetFileNameWithoutExtension(path);
 
         // Sürücü köklerinin (C:\) dosya adı yok.
-        return new GroupItem { Name = name.Length > 0 ? name : path, Path = path };
+        return new GroupItem { Name = name.Length > 0 ? name : path, Path = ShortcutStore.Keep(path) };
     }
 
-    public void Dispose()
+    /// <summary>"Dosya konumunu aç" için: saklanan kısayolda kopyanın değil, hedefin konumu.</summary>
+    [JsonIgnore]
+    public string LocationPath
     {
-        _shell?.Dispose();
-        _shell = null;
+        get
+        {
+            if (!ShortcutStore.IsKept(Path))
+            {
+                return Path;
+            }
+
+            try
+            {
+                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+                string target = shell.CreateShortcut(Path).TargetPath;
+                return File.Exists(target) || Directory.Exists(target) ? target : Path;
+            }
+            catch (COMException)
+            {
+                return Path;
+            }
+        }
     }
 
     public override string ToString() => Name;

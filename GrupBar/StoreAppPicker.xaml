@@ -6,8 +6,7 @@
         Height="480"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterScreen"
-        Loaded="Window_Loaded"
-        Closed="Window_Closed">
+        Loaded="Window_Loaded">
     <DockPanel Margin="12">
         <TextBox x:Name="FilterBox" DockPanel.Dock="Top" TextChanged="FilterBox_TextChanged" />
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
@@ -23,7 +22,7 @@
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <StackPanel Orientation="Horizontal">
-                        <Image Source="{Binding Shell.LargeIcon}" Width="24" Height="24" />
+                        <Image Source="{Binding Icon}" Width="24" Height="24" RenderOptions.BitmapScalingMode="HighQuality" />
                         <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </DataTemplate>

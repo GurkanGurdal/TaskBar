@@ -104,7 +104,26 @@ public sealed class AppSettings : INotifyPropertyChanged
         }
 
         settings.Normalize();
+        if (settings.SecureShortcuts())
+        {
+            settings.Save();
+        }
         return settings;
+    }
+
+    /// <summary>Eski kayıtlar ve silinmiş kısayollar için; yeni öğeler eklenirken zaten korunur.</summary>
+    private bool SecureShortcuts()
+    {
+        List<GroupItem> items = Pinned.Concat(Groups.SelectMany(group => group.Items)).ToList();
+        bool changed = ShortcutStore.Repair(items);
+
+        foreach (GroupItem item in items)
+        {
+            string kept = ShortcutStore.Keep(item.Path);
+            changed |= kept != item.Path;
+            item.Path = kept;
+        }
+        return changed;
     }
 
     public void Save()
