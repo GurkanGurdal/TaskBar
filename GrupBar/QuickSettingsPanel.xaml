@@ -270,6 +270,7 @@
             <Grid>
                 <!-- Arka plan: kapağın bulanık hali, camın üstüne hafif bir renk olarak; cam görünmeye devam etsin. Köşeler kodda kırpılı. -->
                 <Grid x:Name="MediaBackdropHost" Margin="1" IsHitTestVisible="False" SizeChanged="MediaBackdropHost_SizeChanged">
+                    <!-- Opacity, koddaki MediaBackdropOpacity ile aynı olmalı -->
                     <Rectangle x:Name="MediaBackdropImage" Margin="-48" Opacity="0.35">
                         <Rectangle.Fill>
                             <ImageBrush x:Name="MediaBackdrop" Stretch="UniformToFill" />
@@ -393,7 +394,7 @@
                 <StackPanel Margin="14,10,10,10">
                     <DockPanel x:Name="BrightnessRow" Margin="0,0,0,4">
                         <Border DockPanel.Dock="Right" Width="44" />
-                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" Width="34" Text="&#xE706;" />
+                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" Width="34" TextAlignment="Center" Text="&#xE706;" />
                         <Slider x:Name="BrightnessSlider"
                                 Style="{StaticResource QuickSlider}"
                                 AutomationProperties.Name="Parlaklık"

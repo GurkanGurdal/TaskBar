@@ -31,6 +31,9 @@ public partial class QuickSettingsPanel : UserControl
 {
     private const string NoNetwork = "";
     private const double PausedArtScale = 0.9;
+
+    /// <summary>Kapak arka planının opaklığı; camı örtmeyecek kadar hafif.</summary>
+    private const double MediaBackdropOpacity = 0.35;
     private const int EqualizerFrameRate = 20;
     private static readonly int[] EqualizerPeriodsMs = { 430, 560, 370 };
 
@@ -748,7 +751,9 @@ public partial class QuickSettingsPanel : UserControl
     {
         var duration = TimeSpan.FromMilliseconds(320);
         MediaArtHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration));
-        MediaBackdropImage.BeginAnimation(OpacityProperty, new DoubleAnimation(0, MediaBackdropImage.Opacity, duration));
+
+        // Hedef sabit olmalı: o anki değer okunursa, solma sürerken gelen yeni parça arka planı silik bırakır.
+        MediaBackdropImage.BeginAnimation(OpacityProperty, new DoubleAnimation(0, MediaBackdropOpacity, duration));
     }
 
     /// <summary>
