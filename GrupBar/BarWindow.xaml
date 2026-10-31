@@ -400,6 +400,31 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Durum simgelerinin yuvası: ok, ağ, ses ve pil eşit aralıkla dizilsin diye hepsi aynı genişlikte -->
+        <Style x:Key="StatusSlot" TargetType="FrameworkElement">
+            <Setter Property="Width" Value="28" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="Height" Value="28" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Hızlı ayarlar düğmesinin içindeki pil: vurguyu düğme yapar, kendi zemini yok -->
+        <DataTemplate x:Key="BatteryIconTemplate">
+            <Border Style="{StaticResource StatusSlot}"
+                    Background="Transparent"
+                    ToolTip="{Binding Title}"
+                    MouseEnter="TrayIcon_MouseEnter"
+                    MouseLeave="TrayIcon_MouseLeave"
+                    MouseMove="TrayIcon_MouseMove"
+                    MouseDown="TrayIcon_MouseDown"
+                    MouseUp="TrayIcon_MouseUp">
+                <Image Source="{Binding Icon}" Width="16" Height="16" />
+            </Border>
+        </DataTemplate>
+
         <DataTemplate x:Key="TrayIconTemplate">
             <Border Padding="5"
                     CornerRadius="8"
@@ -650,14 +675,19 @@
                     <Border Style="{StaticResource Divider}" />
 
                     <Button x:Name="TrayOverflowButton"
-                            Width="24"
                             AutomationProperties.Name="Diğer simgeler"
                             ToolTip="Diğer simgeler"
                             Click="TrayOverflowButton_Click"
                             Visibility="{Binding HasItems, ElementName=TrayOverflowList, Converter={StaticResource BoolToVisibility}}">
                         <Button.Style>
+                            <!-- Genişlik StatusSlot ile aynı: yanındaki simgelerle eşit aralık -->
                             <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Setter Property="Width" Value="28" />
                                 <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                                        <Setter Property="Width" Value="{Binding ButtonSize, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <Setter Property="Height" Value="28" />
+                                    </DataTrigger>
                                     <DataTrigger Binding="{Binding IsOpen, ElementName=TrayPopup}" Value="True">
                                         <Setter Property="Background" Value="{StaticResource HoverBrush}" />
                                     </DataTrigger>
@@ -700,12 +730,22 @@
                         </Path>
                     </Button>
 
-                    <!-- Hızlı ayarlar: ağ ve ses simgesi; pile tıklamak da aynı paneli açar -->
+                    <!-- Hızlı ayarlar: Windows 11'deki gibi ağ, ses ve pil tek düğme. Pilin tıklaması TrayIcon_MouseUp'ta. -->
                     <Button x:Name="QuickButton"
-                            Style="{StaticResource IconButton}"
                             AutomationProperties.Name="Hızlı ayarlar"
                             ToolTip="Hızlı ayarlar"
                             Click="QuickButton_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Setter Property="Width" Value="Auto" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                                        <Setter Property="Width" Value="{Binding ButtonSize, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <Setter Property="Height" Value="Auto" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Button.Resources>
                             <Style TargetType="TextBlock">
                                 <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
@@ -715,17 +755,24 @@
                             </Style>
                         </Button.Resources>
                         <StackPanel Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
-                            <TextBlock x:Name="QuickNetworkGlyph" Margin="1" Text="&#xE701;" />
-                            <TextBlock x:Name="QuickVolumeGlyph" Margin="1" Text="&#xE995;" />
+                            <Grid Style="{StaticResource StatusSlot}">
+                                <TextBlock x:Name="QuickNetworkGlyph" Text="&#xE701;" />
+                            </Grid>
+                            <Grid Style="{StaticResource StatusSlot}">
+                                <local:VolumeIcon x:Name="QuickVolumeGlyph"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  TextElement.FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                  TextElement.FontSize="13.5" />
+                            </Grid>
+                            <ItemsControl x:Name="TrayList"
+                                          Focusable="False"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Center"
+                                          ItemsPanel="{StaticResource BarItemsPanel}"
+                                          ItemTemplate="{StaticResource BatteryIconTemplate}" />
                         </StackPanel>
                     </Button>
-
-                    <ItemsControl x:Name="TrayList"
-                                  Focusable="False"
-                                  VerticalAlignment="Center"
-                                  HorizontalAlignment="Center"
-                                  ItemsPanel="{StaticResource BarItemsPanel}"
-                                  ItemTemplate="{StaticResource TrayIconTemplate}" />
 
                     <!-- Saat: güneş kadranı ve yanında saat, dakika, tarih -->
                     <StackPanel x:Name="Clock"
@@ -735,10 +782,10 @@
                                 Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
-                                <Setter Property="Margin" Value="4,0,8,0" />
+                                <Setter Property="Margin" Value="1,0,8,0" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
-                                        <Setter Property="Margin" Value="0,4,0,5" />
+                                        <Setter Property="Margin" Value="0,1,0,5" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>

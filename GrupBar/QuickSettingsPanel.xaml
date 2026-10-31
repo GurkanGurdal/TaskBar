@@ -254,7 +254,7 @@
                                 Style="{StaticResource GhostButton}"
                                 AutomationProperties.Name="Sesi kapat veya aç"
                                 Click="VolumeMute_Click">
-                            <TextBlock x:Name="VolumeGlyph" Style="{StaticResource Glyph}" Text="&#xE995;" />
+                            <local:VolumeIcon x:Name="VolumeGlyph" TextElement.FontFamily="{StaticResource Icons}" TextElement.FontSize="15" />
                         </Button>
                         <Slider x:Name="VolumeSlider"
                                 Style="{StaticResource QuickSlider}"

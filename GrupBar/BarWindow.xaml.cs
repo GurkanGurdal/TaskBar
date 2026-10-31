@@ -760,7 +760,7 @@ public partial class BarWindow : AppBarWindow
 
     private void UpdateVolumeGlyph()
     {
-        QuickVolumeGlyph.Text = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
+        QuickVolumeGlyph.Glyph = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
     }
 
     private void NetworkInformation_NetworkStatusChanged(object sender)

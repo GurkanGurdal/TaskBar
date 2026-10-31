@@ -28,7 +28,6 @@ namespace GrupBar;
 /// </summary>
 public partial class QuickSettingsPanel : UserControl
 {
-    private const string Mute = "";
     private const string NoNetwork = "";
     private const byte KeyWin = 0x5B;
     private const byte KeyControl = 0x11;
@@ -103,7 +102,7 @@ public partial class QuickSettingsPanel : UserControl
     {
         if (audio == null || audio.Muted)
         {
-            return Mute;
+            return VolumeIcon.MutedGlyph;
         }
 
         float level = audio.Level;
@@ -449,7 +448,7 @@ public partial class QuickSettingsPanel : UserControl
 
         try
         {
-            VolumeGlyph.Text = VolumeGlyphFor(_audio);
+            VolumeGlyph.Glyph = VolumeGlyphFor(_audio);
 
             // Ses tuşlarıyla ya da başka uygulamadan değişebilir.
             if (!VolumeSlider.IsMouseCaptureWithin)
@@ -477,7 +476,7 @@ public partial class QuickSettingsPanel : UserControl
         try
         {
             _audio.Level = (float)(e.NewValue / 100);
-            VolumeGlyph.Text = VolumeGlyphFor(_audio);
+            VolumeGlyph.Glyph = VolumeGlyphFor(_audio);
         }
         catch (COMException)
         {
@@ -495,7 +494,7 @@ public partial class QuickSettingsPanel : UserControl
         try
         {
             _audio.Muted = !_audio.Muted;
-            VolumeGlyph.Text = VolumeGlyphFor(_audio);
+            VolumeGlyph.Glyph = VolumeGlyphFor(_audio);
         }
         catch (COMException)
         {
