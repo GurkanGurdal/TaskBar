@@ -78,8 +78,9 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Satır (kutu + ad + alt pay) sayfa yüksekliğinin yarısına sığmalı, yoksa ad alttan kesilir -->
         <DataTemplate x:Key="TileTemplate">
-            <StackPanel Width="96" Margin="0,0,0,10">
+            <StackPanel Width="96" Margin="0,0,0,7">
                 <Border Height="48" CornerRadius="10" BorderThickness="1" ClipToBounds="True">
                     <Border.Style>
                         <Style TargetType="Border">
@@ -139,6 +140,110 @@
                            TextTrimming="CharacterEllipsis" />
             </StackPanel>
         </DataTemplate>
+
+        <!-- Alt sayfa satırı: seçili olan vurgulu -->
+        <Style x:Key="OptionRow" TargetType="Button">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+            <Setter Property="IsEnabled" Value="{Binding IsAvailable}" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="10" Padding="10,9">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Plate" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ActiveBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="OptionTemplate">
+            <Button Style="{StaticResource OptionRow}" Click="SubOption_Click">
+                <DockPanel>
+                    <Border Width="4" Height="16" CornerRadius="2" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Background="{StaticResource AccentFill}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+                    <Grid Width="30" Height="22" Margin="0,0,11,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource Glyph}" FontSize="16" Text="{Binding Glyph}" />
+                        <Path Data="{Binding Picture}" Fill="{StaticResource TextPrimary}" Stretch="Uniform" />
+                    </Grid>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Detail}"
+                                   FontSize="11"
+                                   Opacity="0.75"
+                                   Margin="0,1,0,0"
+                                   TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding DetailVisibility}" />
+                    </StackPanel>
+                </DockPanel>
+            </Button>
+        </DataTemplate>
+
+        <Style x:Key="PromptButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Plate" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Plate" Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PromptPassword" TargetType="PasswordBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentFill}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border Background="#14FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="8" Padding="9,6">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="TilePage" TargetType="ItemsControl">
             <Setter Property="Focusable" Value="False" />
@@ -388,7 +493,11 @@
         </local:GlassCard>
 
         <local:GlassCard x:Name="SettingsCard" Opacity="1" CornerRadius="16">
-            <StackPanel>
+            <Grid x:Name="SettingsHost" ClipToBounds="True">
+            <StackPanel x:Name="MainView">
+                <StackPanel.RenderTransform>
+                    <TranslateTransform x:Name="MainSlide" />
+                </StackPanel.RenderTransform>
                 <!-- Sayfalı kutular; tekerlek ya da noktalarla geçilir -->
                 <DockPanel Margin="16,16,8,4" Background="Transparent" MouseWheel="Tiles_MouseWheel">
                     <StackPanel x:Name="PageDots" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="4,0,0,14" />
@@ -467,6 +576,61 @@
                     </DockPanel>
                 </Border>
             </StackPanel>
+
+                <!-- Alt sayfa: ana görünümle aynı yerde, yandan kayarak gelir. Kartın boyu değişmesin diye ana görünüm yerinde kalır. -->
+                <Border x:Name="SubView" Visibility="Collapsed" Padding="10" Height="{Binding ActualHeight, ElementName=MainView}">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="SubSlide" />
+                    </Border.RenderTransform>
+                    <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button Style="{StaticResource GhostButton}"
+                                Width="30"
+                                Height="30"
+                                AutomationProperties.Name="Geri"
+                                ToolTip="Geri"
+                                Click="SubBack_Click">
+                            <TextBlock Style="{StaticResource Glyph}" FontSize="12" Text="&#xE72B;" />
+                        </Button>
+                        <!-- İlgili Windows ayarları: liste uzasa da hep görünür -->
+                        <Button x:Name="SubSettings"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource GhostButton}"
+                                Width="30"
+                                Height="30"
+                                Visibility="Collapsed"
+                                Click="SubSettings_Click">
+                            <TextBlock Style="{StaticResource Glyph}" FontSize="13" Text="&#xE713;" />
+                        </Button>
+                        <TextBlock x:Name="SubTitle" FontSize="14" FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <TextBlock x:Name="SubNote"
+                               DockPanel.Dock="Bottom"
+                               FontSize="11"
+                               Opacity="0.75"
+                               Margin="10,6,10,2"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                    <!-- Bağlantıyı değiştiren eylemlerin onayı; gerekirse parola -->
+                    <StackPanel x:Name="SubPrompt" DockPanel.Dock="Bottom" Margin="6,8,6,2" Visibility="Collapsed">
+                        <TextBlock x:Name="SubPromptText" FontSize="12" Margin="2,0,2,7" TextWrapping="Wrap" />
+                        <PasswordBox x:Name="SubPassword"
+                                     Style="{StaticResource PromptPassword}"
+                                     Margin="0,0,0,7"
+                                     AutomationProperties.Name="Parola"
+                                     PasswordChanged="SubPassword_PasswordChanged"
+                                     KeyDown="SubPassword_KeyDown" />
+                        <UniformGrid Columns="2">
+                            <Button x:Name="SubPromptConfirm" Style="{StaticResource PromptButton}" Background="{StaticResource AccentFill}" Foreground="{StaticResource AccentInk}" Margin="0,0,3,0" Click="SubPromptConfirm_Click" />
+                            <Button Style="{StaticResource PromptButton}" Background="#14FFFFFF" Margin="3,0,0,0" Content="Vazgeç" Click="SubPromptCancel_Click" />
+                        </UniformGrid>
+                    </StackPanel>
+                    <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="SubItems" Focusable="False" ItemTemplate="{StaticResource OptionTemplate}" />
+                    </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Grid>
         </local:GlassCard>
     </StackPanel>
 </UserControl>

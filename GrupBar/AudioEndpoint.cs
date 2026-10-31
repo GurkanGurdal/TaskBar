@@ -174,8 +174,9 @@ internal sealed class AudioEndpoint
         [PreserveSig] int OnNotify(IntPtr data);
     }
 
+    /// <summary>Süreçte tek tür olmalı: Windows aynı nesneyi döndürür, ikinci bir tür dönüşümde hata verir.</summary>
     [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private class MMDeviceEnumerator;
+    internal class MMDeviceEnumerator;
 
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceEnumerator
