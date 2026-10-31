@@ -114,6 +114,7 @@ public sealed class GroupItem : INotifyPropertyChanged
     private ApplicationWindow? _lastFocused;
     private string? _executable;
     private bool _executableResolved;
+    private string? _shortcutAppId;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -166,11 +167,37 @@ public sealed class GroupItem : INotifyPropertyChanged
     {
         if (!HasFileLocation)
         {
-            return string.Equals(window.AppUserModelID, Path[StoreAppPrefix.Length..], StringComparison.OrdinalIgnoreCase);
+            string appId = Path[StoreAppPrefix.Length..];
+            return string.Equals(window.AppUserModelID, appId, StringComparison.OrdinalIgnoreCase) || IsFromPackage(window.WinFileName, appId);
         }
 
+        // Kısayolun kendi kimliği varsa o kesindir: Chrome'un profil kısayolu bağımsız değişkenli olsa da eşleşir.
         string? executable = Executable();
+        if (_shortcutAppId != null && string.Equals(window.AppUserModelID, _shortcutAppId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
         return executable != null && string.Equals(window.WinFileName, executable, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Paketli masaüstü uygulamaları (Claude, Spotify) pencereye kimlik yazmıyor; exe paket klasöründen çalışır:
+    /// Ad_Sürüm_Mimari__Yayıncı. Kimlik: Ad_Yayıncı!Uygulama.
+    /// </summary>
+    private static bool IsFromPackage(string? executable, string appId)
+    {
+        const string packagesRoot = @"\WindowsApps\";
+        int root = executable?.IndexOf(packagesRoot, StringComparison.OrdinalIgnoreCase) ?? -1;
+        string family = appId.Split('!')[0];
+        int publisher = family.LastIndexOf('_');
+        if (root < 0 || publisher <= 0)
+        {
+            return false;
+        }
+
+        string folder = executable![(root + packagesRoot.Length)..].Split('\\')[0];
+        return folder.StartsWith(family[..publisher] + "_", StringComparison.OrdinalIgnoreCase)
+            && folder.EndsWith(family[publisher..], StringComparison.OrdinalIgnoreCase);
     }
 
     public void SetWindows(IReadOnlyList<ApplicationWindow> windows)
@@ -225,8 +252,23 @@ public sealed class GroupItem : INotifyPropertyChanged
         else if (extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
             _executable = ShortcutTarget(Path);
+            _shortcutAppId = ShortcutAppId(Path);
         }
         return _executable;
+    }
+
+    private static string? ShortcutAppId(string path)
+    {
+        try
+        {
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            dynamic? file = shell.NameSpace(System.IO.Path.GetDirectoryName(path))?.ParseName(System.IO.Path.GetFileName(path));
+            return file?.ExtendedProperty("System.AppUserModel.ID") as string is { Length: > 0 } id ? id : null;
+        }
+        catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+        {
+            return null;
+        }
     }
 
     private static string? ShortcutTarget(string path)

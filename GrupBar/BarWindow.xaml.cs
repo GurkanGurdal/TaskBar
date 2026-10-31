@@ -46,6 +46,7 @@ public partial class BarWindow : AppBarWindow
     private const double TintSampleDistance = 24;
     private const double TintSampleLength = 40;
     private const double PanelShadowMargin = 20;
+    private const string PinnedKeyPrefix = "pin:";
     private const double StartPanelHeight = 620;
     private const double StartPanelScreenMargin = 40;
     private const int PreviewShowDelayMs = 350;
@@ -102,6 +103,7 @@ public partial class BarWindow : AppBarWindow
     private readonly ShellManager _shellManager;
     private readonly NotificationArea _notificationArea;
     private readonly ICollectionView _taskWindows;
+    private readonly ICollectionView _allWindows;
     private readonly ListCollectionView? _trayBattery;
     private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
@@ -156,6 +158,12 @@ public partial class BarWindow : AppBarWindow
         _taskWindows = shellManager.Tasks.CreateGroupedWindowsCollection();
         _taskWindows.Filter = item => item is ApplicationWindow { ShowInTaskbar: true } window && window.HMonitor == Screen.HMonitor;
         ((INotifyCollectionChanged)_taskWindows).CollectionChanged += TaskWindows_CollectionChanged;
+
+        // Sabitlenmiş uygulama her çubukta durur; penceresi hangi ekranda olursa olsun durumu görünür.
+        _allWindows = shellManager.Tasks.CreateGroupedWindowsCollection();
+        _allWindows.Filter = item => item is ApplicationWindow { ShowInTaskbar: true };
+        ((INotifyCollectionChanged)_allWindows).CollectionChanged += TaskWindows_CollectionChanged;
+        _settings.Pinned.CollectionChanged += TaskWindows_CollectionChanged;
         TaskList.ItemsSource = _taskGroups;
         SyncTaskGroups();
         _previewShowTimer.Tick += PreviewShowTimer_Tick;
@@ -1060,11 +1068,14 @@ public partial class BarWindow : AppBarWindow
 
         TaskList.ItemsSource = null;
         ((INotifyCollectionChanged)_taskWindows).CollectionChanged -= TaskWindows_CollectionChanged;
+        ((INotifyCollectionChanged)_allWindows).CollectionChanged -= TaskWindows_CollectionChanged;
+        _settings.Pinned.CollectionChanged -= TaskWindows_CollectionChanged;
         foreach (TaskGroup group in _taskGroups)
         {
             group.Detach();
         }
         (_taskWindows as ListCollectionView)?.DetachFromSourceCollection();
+        (_allWindows as ListCollectionView)?.DetachFromSourceCollection();
         TrayList.ItemsSource = null;
         TrayOverflowList.ItemsSource = null;
         _trayBattery?.DetachFromSourceCollection();
@@ -1210,10 +1221,6 @@ public partial class BarWindow : AppBarWindow
         AddItems(_settings.Pinned, PickStoreApps());
     }
 
-    private void UnpinItem_Click(object sender, RoutedEventArgs e)
-    {
-        Unpin((GroupItem)((FrameworkElement)sender).DataContext);
-    }
 
     internal void Unpin(GroupItem item)
     {
@@ -1246,8 +1253,24 @@ public partial class BarWindow : AppBarWindow
 
     private void SyncTaskGroups()
     {
+        var wanted = new List<TaskGroup>();
+        var pinnedWindows = new HashSet<ApplicationWindow>();
+
+        // Önce sabitlenenler, kendi sırasıyla: pencereleri düğmeye toplanır, ayrı düğme açılmaz.
+        foreach (GroupItem pin in _settings.Pinned.DistinctBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            string key = PinnedKeyPrefix + pin.Path;
+            TaskGroup group = _taskGroups.FirstOrDefault(existing => existing.Key == key) ?? new TaskGroup(key, pin);
+            List<ApplicationWindow> windows = _allWindows.OfType<ApplicationWindow>()
+                .Where(window => !pinnedWindows.Contains(window) && pin.Matches(window))
+                .ToList();
+            pinnedWindows.UnionWith(windows);
+            group.SetWindows(windows);
+            wanted.Add(group);
+        }
+
         var windowsByKey = new Dictionary<string, List<ApplicationWindow>>();
-        foreach (ApplicationWindow window in _taskWindows.OfType<ApplicationWindow>())
+        foreach (ApplicationWindow window in _taskWindows.OfType<ApplicationWindow>().Where(window => !pinnedWindows.Contains(window)))
         {
             string key = TaskGroup.KeyOf(window);
             if (!windowsByKey.TryGetValue(key, out List<ApplicationWindow>? windows))
@@ -1257,22 +1280,40 @@ public partial class BarWindow : AppBarWindow
             windows.Add(window);
         }
 
-        // Düğmeler yer değiştirmesin: var olan gruplar yerinde kalır, yeniler sona eklenir.
-        foreach (TaskGroup group in _taskGroups.Where(group => !windowsByKey.ContainsKey(group.Key)).ToList())
+        // Düğmeler yer değiştirmesin: var olanlar yerinde kalır, yeniler sona eklenir.
+        foreach (TaskGroup group in _taskGroups.Where(group => !group.IsPinned && windowsByKey.ContainsKey(group.Key)))
+        {
+            group.SetWindows(windowsByKey[group.Key]);
+            wanted.Add(group);
+        }
+
+        foreach ((string key, List<ApplicationWindow> windows) in windowsByKey)
+        {
+            if (wanted.All(group => group.Key != key))
+            {
+                var group = new TaskGroup(key);
+                group.SetWindows(windows);
+                wanted.Add(group);
+            }
+        }
+
+        foreach (TaskGroup group in _taskGroups.Except(wanted).ToList())
         {
             group.Detach();
             _taskGroups.Remove(group);
         }
 
-        foreach ((string key, List<ApplicationWindow> windows) in windowsByKey)
+        for (int i = 0; i < wanted.Count; i++)
         {
-            TaskGroup? group = _taskGroups.FirstOrDefault(existing => existing.Key == key);
-            if (group == null)
+            int at = _taskGroups.IndexOf(wanted[i]);
+            if (at < 0)
             {
-                group = new TaskGroup(key);
-                _taskGroups.Add(group);
+                _taskGroups.Insert(i, wanted[i]);
             }
-            group.SetWindows(windows);
+            else if (at != i)
+            {
+                _taskGroups.Move(at, i);
+            }
         }
 
         if (PreviewPopup.IsOpen)
@@ -1304,6 +1345,13 @@ public partial class BarWindow : AppBarWindow
 
         ClosePanel();
 
+        // Kapalı pin açılır; açıkken Ctrl yeni kopya açar.
+        if (group.Pin is { } pin && (!group.HasWindows || Keyboard.Modifiers.HasFlag(ModifierKeys.Control)))
+        {
+            ReportFailures(Launcher.Launch(pin) ? [] : [pin]);
+            return;
+        }
+
         if (group.HasMany)
         {
             group.NextWindow(active).BringToFront();
@@ -1317,6 +1365,80 @@ public partial class BarWindow : AppBarWindow
             group.Windows[0].BringToFront();
         }
     }
+
+    private void LaunchPinItem_Click(object sender, RoutedEventArgs e)
+    {
+        GroupItem pin = GroupOfTask(sender).Pin!;
+        ReportFailures(Launcher.Launch(pin) ? [] : [pin]);
+    }
+
+    private void UnpinTaskItem_Click(object sender, RoutedEventArgs e)
+    {
+        Unpin(GroupOfTask(sender).Pin!);
+    }
+
+    private void PinTaskItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (PinItemFor(GroupOfTask(sender).Windows[0]) is { } item)
+        {
+            AddItems(_settings.Pinned, [item]);
+        }
+    }
+
+    /// <summary>Çalışan pencereden sabitlenecek öğe: Store uygulamasında kimlik, diğerlerinde exe.</summary>
+    private static GroupItem? PinItemFor(ApplicationWindow window)
+    {
+        string? packagedId = window.IsUWP && !string.IsNullOrEmpty(window.AppUserModelID) ? window.AppUserModelID : PackagedAppId(window.ProcId);
+        if (packagedId != null)
+        {
+            string path = GroupItem.StoreAppPrefix + packagedId;
+            using var shell = new ManagedShell.ShellFolders.ShellItem(path);
+            return new GroupItem { Name = string.IsNullOrWhiteSpace(shell.DisplayName) ? window.Title : shell.DisplayName, Path = path };
+        }
+
+        if (string.IsNullOrEmpty(window.WinFileName))
+        {
+            return null;
+        }
+
+        string? description = FileVersionInfo.GetVersionInfo(window.WinFileName).FileDescription;
+        return new GroupItem
+        {
+            Name = string.IsNullOrWhiteSpace(description) ? System.IO.Path.GetFileNameWithoutExtension(window.WinFileName) : description,
+            Path = window.WinFileName
+        };
+    }
+
+    /// <summary>Paketli masaüstü uygulamasının kimliği; pencere yazmıyor, exe'si de doğrudan başlatılamıyor.</summary>
+    private static string? PackagedAppId(uint? processId)
+    {
+        const uint queryLimited = 0x1000;
+        IntPtr process = processId is { } id ? OpenProcess(queryLimited, false, id) : IntPtr.Zero;
+        if (process == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            uint length = 512;
+            var text = new System.Text.StringBuilder((int)length);
+            return GetApplicationUserModelId(process, ref length, text) == 0 ? text.ToString() : null;
+        }
+        finally
+        {
+            CloseHandle(process);
+        }
+    }
+
+    [DllImport("kernel32")]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
+
+    [DllImport("kernel32")]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32", CharSet = CharSet.Unicode)]
+    private static extern int GetApplicationUserModelId(IntPtr process, ref uint length, System.Text.StringBuilder id);
 
     private void CloseTaskItem_Click(object sender, RoutedEventArgs e)
     {
@@ -1338,7 +1460,7 @@ public partial class BarWindow : AppBarWindow
         var button = (Button)sender;
         _previewHideTimer.Stop();
 
-        if (GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        if (!GroupOfTask(button).HasWindows || GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || button.ContextMenu?.IsOpen == true)
         {
             return;
         }

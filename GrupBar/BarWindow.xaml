@@ -234,21 +234,22 @@
         <Style x:Key="Divider" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource DividerBrush}" />
             <Setter Property="Width" Value="1" />
-            <Setter Property="Margin" Value="4,7" />
+            <Setter Property="Margin" Value="6,8" />
             <Setter Property="DockPanel.Dock" Value="Left" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
                     <Setter Property="Width" Value="Auto" />
                     <Setter Property="Height" Value="1" />
-                    <Setter Property="Margin" Value="7,4" />
+                    <Setter Property="Margin" Value="8,6" />
                     <Setter Property="DockPanel.Dock" Value="Top" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Pencerenin durumu: nokta çalışıyor, ışıklı çizgi etkin, kehribar dikkat istiyor -->
+        <!-- Uygulamanın durumu: gösterge yok kapalı pin, nokta çalışıyor, ışıklı çizgi etkin, kehribar dikkat istiyor -->
         <Style x:Key="WindowIndicator" TargetType="Border">
             <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Visibility" Value="{Binding HasWindows, Converter={StaticResource BoolToVisibility}}" />
             <Setter Property="Width" Value="16" />
             <Setter Property="Height" Value="3" />
             <Setter Property="CornerRadius" Value="1.5" />
@@ -498,7 +499,7 @@
     </Window.ContextMenu>
 
     <Grid x:Name="BarRoot" Margin="{Binding IslandMargin, RelativeSource={RelativeSource AncestorType=Window}}">
-        <!-- Tek ada: Başlat, sabitlenenler, gruplar, pencereler, pil ve saat. Ekranın ortasında durur. -->
+        <!-- Tek ada, üç bölüm: başlatıcılar (Başlat, Gruplar), uygulamalar (sabitlenenler ve açık olanlar tek listede), sistem ve saat. Ekranın ortasında durur. -->
         <Grid x:Name="MainIsland">
             <Grid.Style>
                 <Style TargetType="Grid">
@@ -559,26 +560,6 @@
                               Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                               Stretch="Uniform" />
                     </Button>
-
-                    <ItemsControl ItemsSource="{Binding Pinned}" ItemsPanel="{StaticResource BarItemsPanel}" Focusable="False">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Style="{StaticResource IconButton}"
-                                        AutomationProperties.Name="{Binding Name}"
-                                        ToolTip="{Binding Name}"
-                                        Click="ItemButton_Click">
-                                    <Button.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Sabitlemeyi kaldır" Click="UnpinItem_Click" />
-                                        </ContextMenu>
-                                    </Button.ContextMenu>
-                                    <Image Source="{Binding Icon}" RenderOptions.BitmapScalingMode="HighQuality"
-                                           Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                                           Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
 
                     <!-- Tüm gruplar tek düğmede; panel ayrıntıyı gösterir. Noktalar: gruplardaki açık uygulamalar. -->
                     <Grid>
@@ -814,6 +795,7 @@
                             <Grid>
                                 <Button Style="{StaticResource TaskButton}"
                                         AutomationProperties.Name="{Binding Title}"
+                                        ToolTip="{Binding ClosedPinName}"
                                         PreviewMouseLeftButtonDown="TaskButton_PreviewMouseLeftButtonDown"
                                         MouseEnter="TaskButton_MouseEnter"
                                         MouseLeave="TaskButton_MouseLeave"
@@ -821,10 +803,23 @@
                                         Click="TaskButton_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
-                                            <MenuItem Header="{Binding CloseLabel}" Click="CloseTaskItem_Click" />
+                                            <MenuItem Header="Yeni kopya aç"
+                                                      Click="LaunchPinItem_Click"
+                                                      Visibility="{Binding IsPinned, Converter={StaticResource BoolToVisibility}}" />
+                                            <MenuItem Header="Çubuğa sabitle"
+                                                      Click="PinTaskItem_Click"
+                                                      Visibility="{Binding IsUnpinned, Converter={StaticResource BoolToVisibility}}" />
+                                            <MenuItem Header="Sabitlemeyi kaldır"
+                                                      Click="UnpinTaskItem_Click"
+                                                      Visibility="{Binding IsPinned, Converter={StaticResource BoolToVisibility}}" />
+                                            <Separator Visibility="{Binding HasWindows, Converter={StaticResource BoolToVisibility}}" />
+                                            <MenuItem Header="{Binding CloseLabel}"
+                                                      Click="CloseTaskItem_Click"
+                                                      Visibility="{Binding HasWindows, Converter={StaticResource BoolToVisibility}}" />
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Image Source="{Binding Icon}"
+                                           RenderOptions.BitmapScalingMode="HighQuality"
                                            Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                                            Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}" />
                                 </Button>
