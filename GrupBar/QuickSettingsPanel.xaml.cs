@@ -33,7 +33,6 @@ public partial class QuickSettingsPanel : UserControl
 
     private const int PageSlideMs = 300;
     private const double TilePageHeight = 152;
-    private const double PageDotActiveScale = 2.2;
     private const double PageDotIdleOpacity = 0.4;
 
     /// <summary>Kapak arka planının opaklığı; camı örtmeyecek kadar hafif.</summary>
@@ -260,27 +259,21 @@ public partial class QuickSettingsPanel : UserControl
         PagesSlide.BeginAnimation(TranslateTransform.YProperty, slide);
     }
 
-    /// <summary>Etkin nokta parlar ve uzar. Yerleşimi değil yalnızca çizimi değiştirir, kaymayı aksatmaz.</summary>
+    /// <summary>Noktalar hep aynı boyda; etkin olan yalnızca parlaklığıyla ayrılır.</summary>
     private void UpdatePageDots(bool animate)
     {
         for (int i = 0; i < _pageDots.Length; i++)
         {
             Border dot = _pageDots[i];
-            var stretch = (ScaleTransform)dot.RenderTransform;
-            double scale = i == _page ? PageDotActiveScale : 1;
             double opacity = i == _page ? 1 : PageDotIdleOpacity;
 
             if (animate && SystemParameters.ClientAreaAnimation)
             {
-                var duration = TimeSpan.FromMilliseconds(PageSlideMs);
-                stretch.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale, duration));
-                dot.BeginAnimation(OpacityProperty, new DoubleAnimation(opacity, duration));
+                dot.BeginAnimation(OpacityProperty, new DoubleAnimation(opacity, TimeSpan.FromMilliseconds(PageSlideMs)));
             }
             else
             {
-                stretch.BeginAnimation(ScaleTransform.ScaleYProperty, null);
                 dot.BeginAnimation(OpacityProperty, null);
-                stretch.ScaleY = scale;
                 dot.Opacity = opacity;
             }
         }
@@ -297,9 +290,7 @@ public partial class QuickSettingsPanel : UserControl
                 Width = 5,
                 Height = 5,
                 CornerRadius = new CornerRadius(2.5),
-                Background = Brushes.White,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                RenderTransform = new ScaleTransform()
+                Background = Brushes.White
             };
 
             // Nokta küçük; tıklama alanı çevresini de kapsasın.
