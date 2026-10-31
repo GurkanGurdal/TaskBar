@@ -13,6 +13,7 @@ public sealed class AppSettings : INotifyPropertyChanged
 {
     private const double MinThickness = 24;
     private const double MaxThickness = 96;
+    private const int MaxRunningDots = 4;
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GrupBar", "settings.json");
@@ -72,6 +73,16 @@ public sealed class AppSettings : INotifyPropertyChanged
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();
 
     public ObservableCollection<AppGroup> Groups { get; set; } = new();
+
+    /// <summary>Gruplar düğmesinin altındaki noktalar: gruplardaki açık uygulamalar.</summary>
+    [JsonIgnore]
+    public IEnumerable<GroupItem> RunningGroupItems =>
+        Groups.SelectMany(group => group.Items).Where(item => item.IsRunning).DistinctBy(item => item.Path).Take(MaxRunningDots).ToList();
+
+    public void NotifyRunStateChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunningGroupItems)));
+    }
 
     public static AppSettings Load()
     {

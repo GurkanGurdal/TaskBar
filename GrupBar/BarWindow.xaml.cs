@@ -39,6 +39,8 @@ public partial class BarWindow : AppBarWindow
     private const double PanelShadowMargin = 20;
     private const int PreviewShowDelayMs = 350;
     private const int PreviewHideDelayMs = 250;
+    private const int PanelStaggerMaxItems = 16;
+    private const int PanelStaggerStepMs = 22;
 
     /// <summary>Bir önizleme kutusunun kenar boşluğuyla birlikte kapladığı yer (<c>PreviewTile</c>).</summary>
     private const double PreviewTileWidth = 220;
@@ -92,7 +94,8 @@ public partial class BarWindow : AppBarWindow
     private readonly ListCollectionView? _trayBattery;
     private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
-    private AppGroup? _panelGroup;
+    private AppGroup? _addTargetGroup;
+    private readonly DispatcherTimer _dragOpenTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private bool _startMenuWasOpen;
     private readonly ObservableCollection<TaskGroup> _taskGroups = new();
     private TaskGroup? _pressedTaskGroup;
@@ -102,6 +105,8 @@ public partial class BarWindow : AppBarWindow
     private Button? _previewButton;
     private readonly ScaleTransform _quickScale = new();
     private readonly IDisposable? _volumeWatcher;
+    private readonly GroupRunTracker? _runTracker;
+    private Point? _tileDragStart;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -143,6 +148,7 @@ public partial class BarWindow : AppBarWindow
         SyncTaskGroups();
         _previewShowTimer.Tick += PreviewShowTimer_Tick;
         _previewHideTimer.Tick += PreviewHideTimer_Tick;
+        _dragOpenTimer.Tick += DragOpenTimer_Tick;
 
         // Tepsi gibi yalnızca ana ekranda. Gizlemek olmaz: IconButton şablonunun Loaded animasyonu,
         // şablonu oluşmamış düğmede hedefini bulamaz ve hata fırlatır.
@@ -154,6 +160,9 @@ public partial class BarWindow : AppBarWindow
         {
             // İkonlar değişince hemen güncellensin; saatin dakikalık yenilemesi kaçan olaya karşı kalır.
             _volumeWatcher = AudioEndpoint.Watch(UpdateVolumeGlyph);
+
+            // Grup verisi çubuklar arasında ortak; izleyen bir tane yeter.
+            _runTracker = new GroupRunTracker(shellManager.Tasks, settings);
             Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
         }
         QuickPanel.RenderTransform = _quickScale;
@@ -474,6 +483,11 @@ public partial class BarWindow : AppBarWindow
             // Küçük resimleri Windows çizer, WPF ölçeklemesi onlara işlemez; önizleme yalnızca solarak gelir.
             AnimatePopupIn(card, popup == GroupPanel ? PanelScale : popup == TrayPopup ? TrayScale : null);
             WindowThumbnail.SetIsShown(card, true);
+
+            if (popup == GroupPanel)
+            {
+                StaggerPanelSections();
+            }
         }
     }
 
@@ -842,6 +856,12 @@ public partial class BarWindow : AppBarWindow
 
     private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // Pencere durumu ayar değil; her pencere değişiminde çalışır.
+        if (e.PropertyName == nameof(AppSettings.RunningGroupItems))
+        {
+            return;
+        }
+
         // Menü ve ayarlar penceresi yalnızca ayarı değiştirir; her çubuk kendine uygular, kaydetmek App'te.
         if (e.PropertyName == nameof(AppSettings.Edge))
         {
@@ -873,8 +893,10 @@ public partial class BarWindow : AppBarWindow
 
         _previewShowTimer.Stop();
         _previewHideTimer.Stop();
+        _dragOpenTimer.Stop();
 
         _volumeWatcher?.Dispose();
+        _runTracker?.Dispose();
         Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
 
         TaskList.ItemsSource = null;
@@ -940,9 +962,16 @@ public partial class BarWindow : AppBarWindow
         _settings.Save();
     }
 
+    private void PanelNewGroup_Click(object sender, RoutedEventArgs e)
+    {
+        NewGroupItem_Click(sender, e);
+        ShowGroupsPanel();
+    }
+
     private void RenameGroupItem_Click(object sender, RoutedEventArgs e)
     {
         RenameGroup(GroupOf(sender), this);
+        ShowGroupsPanel();
     }
 
     internal void RenameGroup(AppGroup group, Window owner)
@@ -966,13 +995,12 @@ public partial class BarWindow : AppBarWindow
             DereferenceLinks = false,
             Filter = "İkonlar ve programlar|*.ico;*.exe;*.lnk;*.dll;*.png|Tüm dosyalar|*.*"
         };
-        if (dialog.ShowDialog(this) != true)
+        if (dialog.ShowDialog(this) == true)
         {
-            return;
+            group.IconPath = dialog.FileName;
+            _settings.Save();
         }
-
-        group.IconPath = dialog.FileName;
-        _settings.Save();
+        ShowGroupsPanel();
     }
 
     private void ResetIconItem_Click(object sender, RoutedEventArgs e)
@@ -984,6 +1012,7 @@ public partial class BarWindow : AppBarWindow
     private void DeleteGroupItem_Click(object sender, RoutedEventArgs e)
     {
         DeleteGroup(GroupOf(sender), this);
+        ShowGroupsPanel();
     }
 
     internal void DeleteGroup(AppGroup group, Window owner)
@@ -993,11 +1022,6 @@ public partial class BarWindow : AppBarWindow
                 "Grubu sil", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
         {
             return;
-        }
-
-        if (_panelGroup == group)
-        {
-            ClosePanel();
         }
 
         _settings.Groups.Remove(group);
@@ -1277,24 +1301,45 @@ public partial class BarWindow : AppBarWindow
     #endregion
 
     #region Panel
-    private void GroupButton_Click(object sender, RoutedEventArgs e)
+    private void GroupsButton_Click(object sender, RoutedEventArgs e)
     {
-        var button = (Button)sender;
-        AppGroup group = GroupOf(button);
-
-        bool wasOpenForGroup = GroupPanel.IsOpen && _panelGroup == group;
+        bool wasOpen = GroupPanel.IsOpen;
         ClosePanel();
 
-        if (wasOpenForGroup)
+        if (!wasOpen)
         {
-            return;
+            ShowGroupsPanel();
         }
+    }
 
-        _panelGroup = group;
-        GroupPanel.DataContext = group;
-        GroupPanel.PlacementTarget = button;
+    private void ShowGroupsPanel()
+    {
+        _runTracker?.Refresh();
+        GroupPanel.PlacementTarget = GroupsButton;
         PlacePopup(GroupPanel, PanelCard);
         OpenPanel();
+    }
+
+    /// <summary>Bölümler sırayla, hafifçe yukarı kayarak belirir.</summary>
+    private void StaggerPanelSections()
+    {
+        for (int i = 0; i < Math.Min(GroupSections.Items.Count, PanelStaggerMaxItems); i++)
+        {
+            if (GroupSections.ItemContainerGenerator.ContainerFromIndex(i) is not UIElement section)
+            {
+                continue;
+            }
+
+            TimeSpan delay = TimeSpan.FromMilliseconds(i * PanelStaggerStepMs);
+            var slide = new TranslateTransform();
+            section.RenderTransform = slide;
+            section.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = delay });
+            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(8, 0, TimeSpan.FromMilliseconds(240))
+            {
+                BeginTime = delay,
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
     }
 
     private void PlacePopup(Popup popup, FrameworkElement card)
@@ -1398,18 +1443,163 @@ public partial class BarWindow : AppBarWindow
 
     private void ItemButton_Click(object sender, RoutedEventArgs e)
     {
-        var item = (GroupItem)((FrameworkElement)sender).DataContext;
+        GroupItem item = ItemOf(sender);
+        bool newInstance = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
         ClosePanel();
+
+        // Dock'lardaki gibi: açıksa ona geç, Ctrl ile yeni kopya.
+        if (!newInstance && item.NextWindow() is { } window)
+        {
+            window.BringToFront();
+            return;
+        }
+
         ReportFailures(Launcher.Launch(item) ? [] : [item]);
     }
 
     private void OpenAllButton_Click(object sender, RoutedEventArgs e)
     {
-        List<GroupItem> items = _panelGroup?.Items.ToList() ?? [];
+        List<GroupItem> items = GroupOf(sender).Items.ToList();
 
         ClosePanel();
-        ReportFailures(items.Where(item => !Launcher.Launch(item)).ToList());
+
+        // Açık olanı ikinci kez açma; önce onları getir ki yeni açılanlar üstte kalsın.
+        foreach (GroupItem item in items.Where(item => item.IsRunning))
+        {
+            item.NextWindow()?.BringToFront();
+        }
+        ReportFailures(items.Where(item => !item.IsRunning && !Launcher.Launch(item)).ToList());
+    }
+
+    private void NewInstanceItem_Click(object sender, RoutedEventArgs e)
+    {
+        GroupItem item = ItemOf(sender);
+
+        ClosePanel();
+        ReportFailures(Launcher.Launch(item) ? [] : [item]);
+    }
+
+    private void OpenLocationItem_Click(object sender, RoutedEventArgs e)
+    {
+        GroupItem item = ItemOf(sender);
+
+        ClosePanel();
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.Path}\"") { UseShellExecute = true });
+    }
+
+    private static GroupItem ItemOf(object sender)
+    {
+        return (GroupItem)((FrameworkElement)sender).DataContext;
+    }
+
+    private void ItemButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _tileDragStart = e.GetPosition(null);
+    }
+
+    private void ItemButton_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _tileDragStart == null)
+        {
+            return;
+        }
+
+        Vector moved = e.GetPosition(null) - _tileDragStart.Value;
+        if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        _tileDragStart = null;
+        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(typeof(GroupItem), ItemOf(sender)), DragDropEffects.Move);
+        _settings.Save();
+    }
+
+    private void ItemButton_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(typeof(GroupItem)) is not GroupItem dragged)
+        {
+            return;
+        }
+
+        // Sürüklerken yer değiştirir; bırakınca yerleşmiş olur. Başka grubun kutusuna gelince o gruba geçer.
+        GroupItem over = ItemOf(sender);
+        AppGroup? source = OwnerOf(dragged);
+        AppGroup? target = OwnerOf(over);
+        if (source != null && target != null && dragged != over)
+        {
+            int to = target.Items.IndexOf(over);
+            if (source == target)
+            {
+                source.Items.Move(source.Items.IndexOf(dragged), to);
+            }
+            else if (!HasPath(target, dragged))
+            {
+                source.Items.Remove(dragged);
+                target.Items.Insert(to, dragged);
+            }
+        }
+
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private AppGroup? OwnerOf(GroupItem item)
+    {
+        return _settings.Groups.FirstOrDefault(group => group.Items.Contains(item));
+    }
+
+    private static bool HasPath(AppGroup group, GroupItem item)
+    {
+        return group.Items.Any(existing => string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ItemButton_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(typeof(GroupItem)))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void GroupSection_DragOver(object sender, DragEventArgs e)
+    {
+        AppGroup group = GroupOf(sender);
+
+        if (e.Data.GetData(typeof(GroupItem)) is GroupItem dragged)
+        {
+            // Kutuların dışına, başka grubun boş yerine gelince o grubun sonuna geçer.
+            if (OwnerOf(dragged) is { } source && source != group && !HasPath(group, dragged))
+            {
+                source.Items.Remove(dragged);
+                group.Items.Add(dragged);
+            }
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+        }
+        else if (SetDropEffect(e))
+        {
+            ((Border)sender).Background = DropHighlight;
+        }
+    }
+
+    private void GroupSection_DragLeave(object sender, DragEventArgs e)
+    {
+        ((Border)sender).Background = Brushes.Transparent;
+    }
+
+    private void GroupSection_Drop(object sender, DragEventArgs e)
+    {
+        var section = (Border)sender;
+        section.Background = Brushes.Transparent;
+
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            AddItems(GroupOf(section).Items, paths.Select(GroupItem.FromPath));
+        }
+        e.Handled = true;
     }
 
     private void ReportFailures(IReadOnlyCollection<GroupItem> failed)
@@ -1423,9 +1613,9 @@ public partial class BarWindow : AppBarWindow
 
     private void RemoveItem_Click(object sender, RoutedEventArgs e)
     {
-        var item = (GroupItem)((FrameworkElement)sender).DataContext;
+        GroupItem item = ItemOf(sender);
 
-        _panelGroup?.Items.Remove(item);
+        OwnerOf(item)?.Items.Remove(item);
         item.Dispose();
         _settings.Save();
     }
@@ -1436,6 +1626,7 @@ public partial class BarWindow : AppBarWindow
     {
         var button = (Button)sender;
 
+        _addTargetGroup = GroupOf(button);
         button.ContextMenu.PlacementTarget = button;
         button.ContextMenu.Placement = PlacementMode.Bottom;
         button.ContextMenu.IsOpen = true;
@@ -1485,15 +1676,13 @@ public partial class BarWindow : AppBarWindow
 
     private void AddToPanelGroup(IEnumerable<GroupItem> items)
     {
-        if (_panelGroup == null)
+        if (_addTargetGroup != null)
         {
-            return;
+            AddItems(_addTargetGroup.Items, items);
         }
 
-        AddItems(_panelGroup.Items, items);
-
         // Diyalog açılınca pencere etkinliğini kaybedip paneli kapatmıştı.
-        OpenPanel();
+        ShowGroupsPanel();
     }
 
     private void AddItems(ICollection<GroupItem> target, IEnumerable<GroupItem> items)
@@ -1510,44 +1699,84 @@ public partial class BarWindow : AppBarWindow
         }
 
         _settings.Save();
+        _runTracker?.Refresh();
     }
 
-    private void GroupButton_DragEnter(object sender, DragEventArgs e)
+    private void GroupsButton_DragEnter(object sender, DragEventArgs e)
     {
-        if (SetDropEffect(e))
+        // Sürüklenen dosya hangi gruba gideceğini görebilsin. Sürükleme bitene dek pencere etkinleşemez;
+        // bırakılınca DragOpenTimer_Tick toparlar.
+        if (SetDropEffect(e) && !GroupPanel.IsOpen)
         {
-            ((Button)sender).Background = DropHighlight;
+            ClosePanel();
+            _runTracker?.Refresh();
+            GroupPanel.PlacementTarget = GroupsButton;
+            PlacePopup(GroupPanel, PanelCard);
+            GroupPanel.IsOpen = true;
+            _dragOpenTimer.Start();
         }
     }
 
-    private void GroupButton_DragOver(object sender, DragEventArgs e)
+    private void GroupsButton_DragOver(object sender, DragEventArgs e)
     {
         SetDropEffect(e);
     }
 
-    private void GroupButton_DragLeave(object sender, DragEventArgs e)
+    private void GroupsButton_Drop(object sender, DragEventArgs e)
     {
-        ((Button)sender).ClearValue(BackgroundProperty);
-    }
-
-    private void GroupButton_Drop(object sender, DragEventArgs e)
-    {
-        var button = (Button)sender;
-        button.ClearValue(BackgroundProperty);
-
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        // Tek grup varsa nereye gideceği belli; yoksa panel açık, kullanıcı bölüme bırakır.
+        if (_settings.Groups.Count == 1 && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
         {
-            AddItems(GroupOf(button).Items, paths.Select(GroupItem.FromPath));
+            AddItems(_settings.Groups[0].Items, paths.Select(GroupItem.FromPath));
         }
-
         e.Handled = true;
     }
+
+    private void DragOpenTimer_Tick(object? sender, EventArgs e)
+    {
+        const int leftButton = 0x01;
+        if ((GetAsyncKeyState(leftButton) & 0x8000) != 0)
+        {
+            return;
+        }
+
+        _dragOpenTimer.Stop();
+
+        // Bırakıldı. İmleç paneldeyse normal açık panele dön, değilse kapat: etkin olmayan panel kendiliğinden kapanmaz.
+        if (GroupPanel.IsOpen && IsCursorOver(PanelCard))
+        {
+            Activate();
+        }
+        if (!IsActive || !IsCursorOver(PanelCard))
+        {
+            ClosePanel();
+        }
+    }
+
+    private static bool IsCursorOver(FrameworkElement element)
+    {
+        if (PresentationSource.FromVisual(element) == null)
+        {
+            return false;
+        }
+
+        System.Drawing.Point cursor = System.Windows.Forms.Cursor.Position;
+        Point origin = element.PointToScreen(new Point(0, 0));
+        DpiScale dpi = VisualTreeHelper.GetDpi(element);
+        return cursor.X >= origin.X && cursor.X <= origin.X + element.ActualWidth * dpi.DpiScaleX
+            && cursor.Y >= origin.Y && cursor.Y <= origin.Y + element.ActualHeight * dpi.DpiScaleY;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32")]
+    private static extern short GetAsyncKeyState(int key);
 
     private static bool SetDropEffect(DragEventArgs e)
     {
         bool canDrop = e.Data.GetDataPresent(DataFormats.FileDrop);
 
-        e.Effects = canDrop ? DragDropEffects.Link : DragDropEffects.None;
+        // Dosyanın kendisine dokunmuyoruz, yolunu tutuyoruz; bağlantıya izin vermeyen kaynak için kopya da olur.
+        DragDropEffects allowed = e.AllowedEffects.HasFlag(DragDropEffects.Link) ? DragDropEffects.Link : DragDropEffects.Copy;
+        e.Effects = canDrop ? allowed : DragDropEffects.None;
         e.Handled = true;
         return canDrop;
     }
