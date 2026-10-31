@@ -621,7 +621,10 @@ public partial class QuickSettingsPanel : UserControl
 
                 MediaTitle.Text = properties.Title;
                 MediaArtist.Text = properties.Artist;
-                MediaArt.ImageSource = await ReadThumbnailAsync(properties);
+                ImageSource? art = await ReadThumbnailAsync(properties);
+                MediaArt.ImageSource = art;
+                MediaBackdrop.ImageSource = art;
+                MediaBackdropHost.Visibility = art != null ? Visibility.Visible : Visibility.Collapsed;
                 MediaAppName.Text = AppNameOf(session.SourceAppUserModelId);
                 MediaAppIcon.Source = FindMediaWindow(session.SourceAppUserModelId)?.Icon;
                 MediaAppGlyph.Visibility = MediaAppIcon.Source == null ? Visibility.Visible : Visibility.Collapsed;
@@ -642,6 +645,13 @@ public partial class QuickSettingsPanel : UserControl
         {
             await RefreshGlassAsync(animateTint: false);
         }
+    }
+
+    private void MediaBackdropHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Bulanık görüntü kartın dışına taşar; camla aynı köşeden kırp.
+        double radius = MediaCard.CornerRadius.TopLeft - 1;
+        MediaBackdropHost.Clip = new RectangleGeometry(new Rect(e.NewSize), radius, radius);
     }
 
     private static async Task<ImageSource?> ReadThumbnailAsync(GlobalSystemMediaTransportControlsSessionMediaProperties properties)

@@ -194,11 +194,22 @@
         <!-- Çalan medya: oturum yoksa görünmez -->
         <local:GlassCard x:Name="MediaCard"
                          Opacity="1"
-                         Padding="16,14"
                          Margin="0,0,0,10"
                          CornerRadius="16"
                          Visibility="Collapsed">
-            <StackPanel>
+            <Grid>
+                <!-- Arka plan: kapağın bulanık hali, camın üstüne hafif bir renk olarak; cam görünmeye devam etsin. Köşeler kodda kırpılı. -->
+                <Grid x:Name="MediaBackdropHost" Margin="1" IsHitTestVisible="False" SizeChanged="MediaBackdropHost_SizeChanged">
+                    <Rectangle Margin="-48" Opacity="0.35">
+                        <Rectangle.Fill>
+                            <ImageBrush x:Name="MediaBackdrop" Stretch="UniformToFill" />
+                        </Rectangle.Fill>
+                        <Rectangle.Effect>
+                            <BlurEffect Radius="32" KernelType="Gaussian" RenderingBias="Performance" />
+                        </Rectangle.Effect>
+                    </Rectangle>
+                </Grid>
+                <StackPanel Margin="16,14">
                 <DockPanel>
                     <Button DockPanel.Dock="Right"
                             Style="{StaticResource GhostButton}"
@@ -236,7 +247,8 @@
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE893;" />
                     </Button>
                 </StackPanel>
-            </StackPanel>
+                </StackPanel>
+            </Grid>
         </local:GlassCard>
 
         <local:GlassCard x:Name="SettingsCard" Opacity="1" CornerRadius="16">
