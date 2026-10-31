@@ -708,6 +708,7 @@ public partial class BarWindow : AppBarWindow
         if (StartPopup.IsOpen)
         {
             AnimatePopupIn(StartPanel, _startScale);
+            StartPanel.AnimateEntrance();
         }
     }
 

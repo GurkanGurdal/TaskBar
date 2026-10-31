@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Windows.System;
@@ -14,27 +15,42 @@ using Windows.System;
 namespace GrupBar;
 
 /// <summary>
-/// GrupBar'ın Başlat menüsü: arama, sabitlenenler, tüm uygulamalar, hesap ve güç. Windows'un kendi menüsünün
-/// görünümü Explorer'a girmeden değiştirilemiyor; bu onun yerine açılır.
+/// GrupBar'ın Başlat menüsü: sol şerit (hesap, yerler, güç), büyük arama, sabitlenenler, son kullanılanlar ve
+/// harf harf tüm uygulamalar. Windows'un kendi menüsünün görünümü Explorer'a girmeden değiştirilemiyor; bu onun yerine açılır.
 /// </summary>
 public partial class StartMenuPanel : UserControl
 {
-    private const int Columns = 6;
+    private const int MaxRecentsShown = 4;
+    private const int MaxRecentsKept = 12;
+    private const int MaxStaggeredPins = 16;
+    private const int StaggerStepMs = 18;
+    private const int RiseMs = 220;
+    private const double RiseDistance = 12;
+    private const int ResultsFadeMs = 120;
+    private const int LetterScrollMs = 240;
 
     /// <summary>Sağ tık menüsü şablonunun gölge payı (Theme.xaml).</summary>
     private const double MenuShadowMargin = 14;
 
     private static readonly string[] DocumentExtensions = { ".chm", ".txt", ".htm", ".html", ".url", ".pdf", ".rtf", ".md" };
 
+    /// <summary>ScrollViewer'ın konumu canlandırılamıyor; harfe kayarken bu özellik üzerinden gider.</summary>
+    private static readonly DependencyProperty AnimatedOffsetProperty = DependencyProperty.Register(
+        "AnimatedOffset", typeof(double), typeof(StartMenuPanel),
+        new PropertyMetadata(0d, (d, e) => ((StartMenuPanel)d).Scroller.ScrollToVerticalOffset((double)e.NewValue)));
+
     /// <summary>Liste çubuklar arasında ortak; simgeleri tekrar tekrar yüklenmesin.</summary>
     private static Task<List<GroupItem>>? _appsLoading;
+    private static List<GroupItem> _lastApps = [];
 
     private AppSettings? _settings;
     private List<GroupItem> _apps = [];
+    private List<StartLetterGroup> _groups = [];
     private List<GroupItem> _results = [];
     private int _selected = -1;
     private bool _open;
     private bool _accountLoaded;
+    private string _firstName = Environment.UserName;
 
     public StartMenuPanel()
     {
@@ -65,7 +81,7 @@ public partial class StartMenuPanel : UserControl
     public static async Task PreloadAsync(AppSettings settings)
     {
         // Sıra sırayla yüklenir: en önde görünenler uzun listenin arkasında beklemesin.
-        foreach (GroupItem pin in settings.StartPinned)
+        foreach (GroupItem pin in settings.StartPinned.Concat(settings.StartRecents))
         {
             _ = pin.Icon;
         }
@@ -79,9 +95,7 @@ public partial class StartMenuPanel : UserControl
     /// <summary>İki yüzü aşkın kutuyu önceden kurar: yoksa ilk Windows tuşu bir saniye bekliyor.</summary>
     public async Task WarmAsync()
     {
-        _apps = await LoadAppsAsync();
-        _results = _apps;
-        AppList.ItemsSource = _results;
+        ShowApps(await LoadAppsAsync());
         Measure(new Size(Width, double.PositiveInfinity));
         Arrange(new Rect(DesiredSize));
     }
@@ -91,8 +105,10 @@ public partial class StartMenuPanel : UserControl
     {
         _open = true;
         SearchBox.Text = string.Empty;
+        BeginAnimation(AnimatedOffsetProperty, null);
         Scroller.ScrollToTop();
-        UpdatePinnedVisibility();
+        ShowRecents();
+        UpdateGreeting();
         _ = LoadAccountAsync();
 
         await Card.RefreshGlassAsync(animateTint: false);
@@ -119,34 +135,94 @@ public partial class StartMenuPanel : UserControl
         }, DispatcherPriority.Input);
     }
 
+    /// <summary>Kart belirirken içerik sırayla yükselir. Yalnızca görünen üst kısım: uzun liste beklemesin.</summary>
+    public void AnimateEntrance()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            return;
+        }
+
+        int step = 0;
+        foreach (object pin in PinnedList.Items.Cast<object>().Take(MaxStaggeredPins))
+        {
+            if (PinnedList.ItemContainerGenerator.ContainerFromItem(pin) is UIElement tile)
+            {
+                Rise(tile, step++);
+            }
+        }
+
+        Rise(RecentSection, step++);
+        Rise(AppsSection, step);
+    }
+
+    private static void Rise(UIElement element, int step)
+    {
+        TimeSpan delay = TimeSpan.FromMilliseconds(step * StaggerStepMs);
+        var duration = TimeSpan.FromMilliseconds(RiseMs);
+        var slide = new TranslateTransform();
+        element.RenderTransform = slide;
+        element.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { BeginTime = delay });
+        slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(RiseDistance, 0, duration)
+        {
+            BeginTime = delay,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
+
+    private void UpdateGreeting()
+    {
+        int hour = DateTime.Now.Hour;
+        string greeting = hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : hour < 23 ? "İyi akşamlar" : "İyi geceler";
+        Greeting.Text = $"{greeting}, {_firstName}";
+    }
+
     #region Apps
     private async Task FillAppsAsync()
     {
         // Çok sayıda kutu ilk seferde biraz sürüyor: panel önce görünsün.
-        if (AppList.ItemsSource == null)
+        if (LetterGroups.ItemsSource == null)
         {
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
         }
 
         List<GroupItem> apps = await LoadAppsAsync();
-        if (!_open)
+
+        // Sonraki açılış, bu arada yüklenen ya da kaldırılan uygulamaları görsün.
+        _appsLoading = null;
+        if (_open)
+        {
+            ShowApps(apps);
+        }
+    }
+
+    private void ShowApps(List<GroupItem> apps)
+    {
+        if (ReferenceEquals(apps, _apps))
         {
             return;
         }
 
         _apps = apps;
+        _groups = apps
+            .GroupBy(app => LetterOf(app.Name))
+            .Select(group => new StartLetterGroup(group.Key, group.ToList()))
+            .ToList();
+        LetterGroups.ItemsSource = _groups;
+        LetterRail.ItemsSource = _groups;
         ApplyFilter();
+    }
 
-        // Sonraki açılış, bu arada yüklenen ya da kaldırılan uygulamaları görsün.
-        _appsLoading = null;
+    private static string LetterOf(string name)
+    {
+        char first = name.Length > 0 ? name[0] : '#';
+        return char.IsLetter(first) ? char.ToUpper(first, CultureInfo.CurrentCulture).ToString() : "#";
     }
 
     private static Task<List<GroupItem>> LoadAppsAsync()
     {
         return _appsLoading ??= ReadAppsAsync(_lastApps);
     }
-
-    private static List<GroupItem> _lastApps = [];
 
     private static Task<List<GroupItem>> ReadAppsAsync(List<GroupItem> known)
     {
@@ -199,11 +275,56 @@ public partial class StartMenuPanel : UserControl
     }
     #endregion
 
+    #region Letter rail
+    private double OffsetOf(StartLetterGroup group)
+    {
+        return LetterGroups.ItemContainerGenerator.ContainerFromItem(group) is FrameworkElement row
+            ? row.TranslatePoint(new Point(0, 0), ScrollContent).Y
+            : 0;
+    }
+
+    private void Letter_Click(object sender, RoutedEventArgs e)
+    {
+        double target = Math.Min(OffsetOf((StartLetterGroup)((FrameworkElement)sender).DataContext), Scroller.ScrollableHeight);
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            Scroller.ScrollToVerticalOffset(target);
+            return;
+        }
+
+        BeginAnimation(AnimatedOffsetProperty, new DoubleAnimation(Scroller.VerticalOffset, target, TimeSpan.FromMilliseconds(LetterScrollMs))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop
+        });
+
+        // Animasyon bitince özellik kendi değerine döner; o değer hedef olmalı, yoksa liste başa atlar.
+        SetValue(AnimatedOffsetProperty, target);
+    }
+
+    private void Scroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        StartLetterGroup? current = null;
+        foreach (StartLetterGroup group in _groups)
+        {
+            if (OffsetOf(group) > Scroller.VerticalOffset + 1)
+            {
+                break;
+            }
+            current = group;
+        }
+
+        foreach (StartLetterGroup group in _groups)
+        {
+            group.IsActive = group == current;
+        }
+    }
+    #endregion
+
     #region Search
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         SearchHint.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        Scroller.ScrollToTop();
         ApplyFilter();
     }
 
@@ -219,19 +340,30 @@ public partial class StartMenuPanel : UserControl
                 .OrderBy(match => match.Rank)
                 .Select(match => match.App)
                 .ToList()
-            : _apps;
-        AppList.ItemsSource = _results;
+            : [];
+        ResultsList.ItemsSource = _results;
 
-        UpdatePinnedVisibility();
-        AppsTitle.Text = searching ? "En iyi sonuçlar" : "Tüm uygulamalar";
-        AppsTitle.Visibility = searching && _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        SetSearching(searching);
         NoResults.Visibility = searching && _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        WindowsSearchButton.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
         WindowsSearchText.Text = $"\"{query}\" için bu bilgisayarda ara";
+        ResultsView.ScrollToTop();
 
-        if (searching && _results.Count > 0)
+        if (_results.Count > 0)
         {
             Select(0);
+        }
+    }
+
+    private void SetSearching(bool searching)
+    {
+        bool wasSearching = ResultsView.Visibility == Visibility.Visible;
+        ResultsView.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
+        BrowseView.Visibility = searching ? Visibility.Collapsed : Visibility.Visible;
+
+        if (searching != wasSearching && SystemParameters.ClientAreaAnimation)
+        {
+            UIElement shown = searching ? ResultsView : BrowseView;
+            shown.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(ResultsFadeMs)));
         }
     }
 
@@ -252,16 +384,14 @@ public partial class StartMenuPanel : UserControl
     {
         int step = e.Key switch
         {
-            Key.Right => SearchBox.Text.Length == 0 ? 1 : 0,
-            Key.Left => SearchBox.Text.Length == 0 ? -1 : 0,
-            Key.Down => Columns,
-            Key.Up => -Columns,
+            Key.Down => 1,
+            Key.Up => -1,
             _ => 0
         };
 
         if (step != 0 && _results.Count > 0)
         {
-            int next = _selected < 0 ? 0 : _selected + step;
+            int next = _selected + step;
             if (next >= 0 && next < _results.Count)
             {
                 Select(next);
@@ -296,9 +426,9 @@ public partial class StartMenuPanel : UserControl
         }
 
         _results[index].IsHighlighted = true;
-        if (AppList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement tile)
+        if (ResultsList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement row)
         {
-            tile.BringIntoView();
+            row.BringIntoView();
         }
     }
 
@@ -314,9 +444,11 @@ public partial class StartMenuPanel : UserControl
     #endregion
 
     #region Tiles
-    private void UpdatePinnedVisibility()
+    private void ShowRecents()
     {
-        PinnedSection.Visibility = SearchBox.Text.Trim().Length == 0 && _settings?.StartPinned.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        List<GroupItem> recents = _settings!.StartRecents.Where(item => !IsPinned(item)).Take(MaxRecentsShown).ToList();
+        RecentList.ItemsSource = recents;
+        RecentSection.Visibility = recents.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Tile_Click(object sender, RoutedEventArgs e)
@@ -330,7 +462,26 @@ public partial class StartMenuPanel : UserControl
         if (!Launcher.Launch(item))
         {
             LaunchFailed?.Invoke(item);
+            return;
         }
+        Remember(item);
+    }
+
+    private void Remember(GroupItem item)
+    {
+        System.Collections.ObjectModel.ObservableCollection<GroupItem> recents = _settings!.StartRecents;
+        GroupItem? known = recents.FirstOrDefault(recent => string.Equals(recent.Path, item.Path, StringComparison.OrdinalIgnoreCase));
+        if (known != null)
+        {
+            recents.Remove(known);
+        }
+
+        recents.Insert(0, known ?? new GroupItem { Name = item.Name, Path = item.Path });
+        while (recents.Count > MaxRecentsKept)
+        {
+            recents.RemoveAt(recents.Count - 1);
+        }
+        _settings.Save();
     }
 
     private bool IsPinned(GroupItem item)
@@ -356,7 +507,7 @@ public partial class StartMenuPanel : UserControl
         GroupItem item = ItemOf(sender);
         _settings!.StartPinned.Add(new GroupItem { Name = item.Name, Path = item.Path });
         _settings.Save();
-        UpdatePinnedVisibility();
+        ShowRecents();
     }
 
     private void UnpinFromStart_Click(object sender, RoutedEventArgs e)
@@ -368,7 +519,7 @@ public partial class StartMenuPanel : UserControl
             _settings.StartPinned.Remove(pin);
             _settings.Save();
         }
-        UpdatePinnedVisibility();
+        ShowRecents();
     }
 
     private void PinToBar_Click(object sender, RoutedEventArgs e)
@@ -378,7 +529,7 @@ public partial class StartMenuPanel : UserControl
     }
     #endregion
 
-    #region Footer
+    #region Rail
     private async Task LoadAccountAsync()
     {
         if (_accountLoaded)
@@ -386,7 +537,6 @@ public partial class StartMenuPanel : UserControl
             return;
         }
         _accountLoaded = true;
-        AccountName.Text = Environment.UserName;
 
         try
         {
@@ -398,7 +548,9 @@ public partial class StartMenuPanel : UserControl
 
             if (await user.GetPropertyAsync(KnownUserProperties.DisplayName) is string { Length: > 0 } name)
             {
-                AccountName.Text = name;
+                AccountButton.ToolTip = name;
+                _firstName = name.Split(' ')[0];
+                UpdateGreeting();
             }
 
             if (await user.GetPictureAsync(UserPictureSize.Size64x64) is { } reference)
@@ -410,7 +562,7 @@ public partial class StartMenuPanel : UserControl
                 picture.StreamSource = stream.AsStreamForRead();
                 picture.EndInit();
                 picture.Freeze();
-                AccountPicture.Fill = new ImageBrush(picture) { Stretch = Stretch.UniformToFill };
+                AccountPicture.Background = new ImageBrush(picture) { Stretch = Stretch.UniformToFill };
                 AccountPicture.Visibility = Visibility.Visible;
             }
         }
@@ -431,25 +583,20 @@ public partial class StartMenuPanel : UserControl
         Open("ms-settings:accounts");
     }
 
-    private void Explorer_Click(object sender, RoutedEventArgs e)
+    private void Place_Click(object sender, RoutedEventArgs e)
     {
-        Open("explorer.exe");
-    }
-
-    private void Settings_Click(object sender, RoutedEventArgs e)
-    {
-        Open("ms-settings:");
+        Open((string)((FrameworkElement)sender).Tag);
     }
 
     private void Power_Click(object sender, RoutedEventArgs e)
     {
         ContextMenu menu = PowerButton.ContextMenu;
         menu.PlacementTarget = PowerButton;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
         menu.IsOpen = true;
 
-        // Sağ kenarı düğmeyle hizalı: boyutu ancak açılınca belli, yoksa kartın dışına taşar.
-        menu.HorizontalOffset = PowerButton.ActualWidth - menu.ActualWidth + MenuShadowMargin;
+        // Alt kenarı düğmeyle hizalı: boyutu ancak açılınca belli, yoksa ekranın altına taşar.
+        menu.VerticalOffset = PowerButton.ActualHeight - menu.ActualHeight + MenuShadowMargin;
     }
 
     private void Lock_Click(object sender, RoutedEventArgs e)
@@ -504,4 +651,29 @@ public partial class StartMenuPanel : UserControl
     [DllImport("powrprof")]
     private static extern bool SetSuspendState(bool hibernate, bool force, bool disableWakeEvent);
     #endregion
+}
+
+/// <summary>Tüm uygulamalarda bir harfin altındakiler. <see cref="IsActive"/>: şeritte parlak olan harf.</summary>
+public sealed class StartLetterGroup(string letter, IReadOnlyList<GroupItem> items) : INotifyPropertyChanged
+{
+    private bool _isActive;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string Letter { get; } = letter;
+
+    public IReadOnlyList<GroupItem> Items { get; } = items;
+
+    public bool IsActive
+    {
+        get => _isActive;
+        set
+        {
+            if (_isActive != value)
+            {
+                _isActive = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActive)));
+            }
+        }
+    }
 }

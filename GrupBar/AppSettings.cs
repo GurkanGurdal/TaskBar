@@ -83,6 +83,9 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// <summary>Kayıtta hiç yoksa çubuktaki sabitlenenlerle başlar: Windows kendi listesini uygulamalara açmıyor.</summary>
     public ObservableCollection<GroupItem> StartPinned { get; set; } = null!;
 
+    /// <summary>Başlat menüsünden en son açılanlar, en yenisi başta.</summary>
+    public ObservableCollection<GroupItem> StartRecents { get; set; } = new();
+
     public ObservableCollection<AppGroup> Groups { get; set; } = new();
 
     /// <summary>Gruplar düğmesinin altındaki noktalar: gruplardaki açık uygulamalar.</summary>
@@ -125,7 +128,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// <summary>Eski kayıtlar ve silinmiş kısayollar için; yeni öğeler eklenirken zaten korunur.</summary>
     private bool SecureShortcuts()
     {
-        List<GroupItem> items = Pinned.Concat(StartPinned).Concat(Groups.SelectMany(group => group.Items)).ToList();
+        List<GroupItem> items = Pinned.Concat(StartPinned).Concat(StartRecents).Concat(Groups.SelectMany(group => group.Items)).ToList();
         bool changed = ShortcutStore.Repair(items);
 
         foreach (GroupItem item in items)
@@ -191,6 +194,8 @@ public sealed class AppSettings : INotifyPropertyChanged
 
         StartPinned ??= new ObservableCollection<GroupItem>(Pinned.Select(item => new GroupItem { Name = item.Name, Path = item.Path }));
         RemoveInvalidItems(StartPinned);
+        StartRecents ??= new ObservableCollection<GroupItem>();
+        RemoveInvalidItems(StartRecents);
 
         Groups ??= new ObservableCollection<AppGroup>();
         foreach (AppGroup group in Groups.Where(g => g == null).ToList())

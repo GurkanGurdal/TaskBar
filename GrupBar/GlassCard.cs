@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -20,6 +21,9 @@ public class GlassCard : ContentControl
 
     private const int ToolTipFadeMs = 110;
 
+    /// <summary>Bulanıklığın kenarda saydamlaşmaması için görüntü kartın bu kadar dışına taşar.</summary>
+    private const double BlurBleedRatio = 1;
+
     private readonly ImageBrush _glassBrush = new() { Stretch = Stretch.Fill };
     private readonly SolidColorBrush _tintBrush = new(GlassTint.OnDark);
     private Grid? _shadowHost;
@@ -36,6 +40,9 @@ public class GlassCard : ContentControl
         get => (CornerRadius)GetValue(CornerRadiusProperty);
         set => SetValue(CornerRadiusProperty, value);
     }
+
+    /// <summary>Boşsa şablondaki bulanıklık geçerli.</summary>
+    public double? BlurRadius { get; set; }
 
     /// <summary>İpuçları da bu camdan (şablonu Theme.xaml'da). Açan taraf olmadığı için belirme burada.</summary>
     public static void AttachToToolTips()
@@ -68,7 +75,13 @@ public class GlassCard : ContentControl
         _shadowHost = (Grid)GetTemplateChild("PART_ShadowHost");
         _glassHost = (Grid)GetTemplateChild("PART_GlassHost");
         _fallback = (Border)GetTemplateChild("PART_Fallback");
-        ((Rectangle)GetTemplateChild("PART_GlassImage")).Fill = _glassBrush;
+        var glassImage = (Rectangle)GetTemplateChild("PART_GlassImage");
+        glassImage.Fill = _glassBrush;
+        if (BlurRadius is { } radius)
+        {
+            glassImage.Margin = new Thickness(-radius * BlurBleedRatio);
+            glassImage.Effect = new BlurEffect { Radius = radius, KernelType = KernelType.Gaussian, RenderingBias = RenderingBias.Performance };
+        }
         ((Border)GetTemplateChild("PART_Tint")).Background = _tintBrush;
     }
 
