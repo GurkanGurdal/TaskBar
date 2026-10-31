@@ -738,11 +738,13 @@
                         </StackPanel>
                     </Button>
 
-                    <!-- Saat: güneş kadranı ve yanında saat, dakika, tarih -->
+                    <!-- Saat: normalde yalnızca saat. Üzerine gelince küçülüp yukarı kayar, altında tarih belirir (AnimateClockFace).
+                         Dikey çubukta saat ve dakika alt alta, tarih ipucunda. -->
                     <StackPanel x:Name="Clock"
                                 Background="Transparent"
                                 VerticalAlignment="Center"
-                                Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}"
+                                MouseEnter="Clock_MouseEnter"
+                                MouseLeave="Clock_MouseLeave"
                                 Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
@@ -758,50 +760,45 @@
                         <StackPanel.Effect>
                             <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.6" />
                         </StackPanel.Effect>
-                        <local:DayDial x:Name="ClockDial" VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <local:DayDial.Style>
-                                <Style TargetType="local:DayDial">
-                                    <Setter Property="Margin" Value="0,0,7,0" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
-                                            <Setter Property="Margin" Value="0,0,0,3" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </local:DayDial.Style>
-                        </local:DayDial>
-                        <StackPanel VerticalAlignment="Center">
-                            <!-- Saat kalın, dakika ince: bir bakışta saat okunur -->
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <StackPanel.Style>
-                                    <Style TargetType="StackPanel">
-                                        <Setter Property="TextElement.FontSize" Value="14.5" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
-                                                <Setter Property="TextElement.FontSize" Value="12.5" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </StackPanel.Style>
-                                <local:RollingText x:Name="ClockHours" TextElement.FontWeight="SemiBold" />
-                                <TextBlock x:Name="ClockSeparator" Opacity="0.55" Margin="1,0" />
-                                <local:RollingText x:Name="ClockMinutes" TextElement.FontWeight="Light" />
+                        <Grid x:Name="ClockFace" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Viewbox StretchDirection="DownOnly" VerticalAlignment="Center" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                            <Viewbox.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform x:Name="ClockTimeScale" />
+                                    <TranslateTransform x:Name="ClockTimeSlide" />
+                                </TransformGroup>
+                            </Viewbox.RenderTransform>
+                            <StackPanel x:Name="ClockTime"
+                                        TextElement.FontFamily="{StaticResource ClockFont}"
+                                        Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <local:RollingText x:Name="ClockHours" TextElement.FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="ClockSeparator" Opacity="0.5" Margin="1,0" Style="{StaticResource BarText}" />
+                                <local:RollingText x:Name="ClockMinutes" TextElement.FontWeight="Light" HorizontalAlignment="Center">
+                                    <local:RollingText.Style>
+                                        <Style TargetType="local:RollingText">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static Orientation.Vertical}">
+                                                    <Setter Property="Margin" Value="0,-5,0,0" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </local:RollingText.Style>
+                                </local:RollingText>
                             </StackPanel>
-                            <TextBlock x:Name="DateText" Foreground="#DDE1EA" FontSize="10" HorizontalAlignment="Center" Margin="0,-1,0,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock" BasedOn="{StaticResource BarText}">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ShowDate}" Value="False">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding IsCompact, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
+                        </Viewbox>
+                        <!-- Eksi kenar payı: tarih saatten biraz geniş olsa da ada genişlemez -->
+                        <TextBlock x:Name="ClockDate"
+                                   Style="{StaticResource BarText}"
+                                   Margin="-14,0"
+                                   VerticalAlignment="Bottom"
+                                   TextAlignment="Center"
+                                   Opacity="0"
+                                   IsHitTestVisible="False">
+                            <TextBlock.RenderTransform>
+                                <TranslateTransform x:Name="ClockDateSlide" />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        </Grid>
                     </StackPanel>
                 </StackPanel>
 

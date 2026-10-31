@@ -29,6 +29,13 @@ public partial class BarWindow : AppBarWindow
 
     /// <summary>Adanın ekran kenarıyla ve pencerelerle arasındaki boşluk.</summary>
     private const double FloatGap = 8;
+    private const int ClockShowDateMs = 220;
+    private const int ClockHideDateMs = 160;
+    private const double ClockShrunkScale = 0.72;
+
+    /// <summary>Üzerine gelince saatin yukarı kayması, kendi yüksekliğine oranla.</summary>
+    private const double ClockLift = 0.22;
+    private const double ClockDateRise = 4;
     private const double IslandPadding = 4;
     private const double IslandCornerRadius = 15;
     private const double ShadowBleed = 8;
@@ -209,7 +216,31 @@ public partial class BarWindow : AppBarWindow
         ButtonSize = thickness - 2 * IslandPadding;
         IconSize = Math.Max(16, Math.Round(ButtonSize * 0.62));
         IsCompact = thickness < CompactThickness;
-        ClockDial.Width = ClockDial.Height = Math.Clamp(ButtonSize - 6, 16, 30);
+        double clockSize = Math.Clamp(Math.Round(ButtonSize * 0.58), 13, 26);
+        ClockTime.SetValue(TextBlock.FontSizeProperty, clockSize);
+        ClockDate.FontSize = Math.Clamp(Math.Round(ButtonSize * 0.32), 10, 13);
+        CenterClockDigits(clockSize);
+    }
+
+    /// <summary>
+    /// Rakamların kuyruğu yok, satır kutusunun altında dururlar: kutu ortalanınca saat adada aşağıda görünür.
+    /// Tarih yerinde kalsın diye saatin kayması onun payından düşülür.
+    /// </summary>
+    private void CenterClockDigits(double fontSize)
+    {
+        var text = new FormattedText(
+            "0",
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            new Typeface((FontFamily)FindResource("ClockFont"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+            fontSize,
+            Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        Rect ink = text.BuildGeometry(new Point()).Bounds;
+        double drop = (ink.Top + ink.Bottom) / 2 - text.Height / 2;
+
+        ClockFace.Margin = new Thickness(0, 0, 0, 2 * drop);
+        ClockDate.Margin = new Thickness(-14, 0, -14, -drop);
     }
 
     private ListCollectionView CreateTrayView(Predicate<NotifyIcon> belongs)
@@ -835,11 +866,38 @@ public partial class BarWindow : AppBarWindow
         ClockSeparator.Text = at < 0 ? string.Empty : separator;
         ClockMinutes.Text = at < 0 ? string.Empty : time[(at + separator.Length)..];
 
-        ClockDial.Time = now;
-        DateText.Text = now.ToString("ddd d MMM");
+        ClockDate.Text = now.ToString("ddd d MMM");
         Clock.ToolTip = now.ToString("D");
 
         UpdateQuickGlyphs();
+    }
+
+    private void Clock_MouseEnter(object sender, MouseEventArgs e)
+    {
+        // İnce çubukta iki satır sığmaz, dikey çubukta tarih ipucunda.
+        if (_settings.ShowDate && !IsCompact && Orientation == Orientation.Horizontal)
+        {
+            AnimateClockFace(showDate: true);
+        }
+    }
+
+    private void Clock_MouseLeave(object sender, MouseEventArgs e)
+    {
+        AnimateClockFace(showDate: false);
+    }
+
+    private void AnimateClockFace(bool showDate)
+    {
+        var duration = TimeSpan.FromMilliseconds(!SystemParameters.ClientAreaAnimation ? 0 : showDate ? ClockShowDateMs : ClockHideDateMs);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        DoubleAnimation To(double value) => new(value, duration) { EasingFunction = ease };
+
+        double scale = showDate ? ClockShrunkScale : 1;
+        ClockTimeScale.BeginAnimation(ScaleTransform.ScaleXProperty, To(scale));
+        ClockTimeScale.BeginAnimation(ScaleTransform.ScaleYProperty, To(scale));
+        ClockTimeSlide.BeginAnimation(TranslateTransform.YProperty, To(showDate ? -ClockFace.ActualHeight * ClockLift : 0));
+        ClockDate.BeginAnimation(OpacityProperty, To(showDate ? 1 : 0));
+        ClockDateSlide.BeginAnimation(TranslateTransform.YProperty, To(showDate ? 0 : ClockDateRise));
     }
     #endregion
 
