@@ -2,7 +2,7 @@
 
 ## Phosphor Icons
 
-Gruplar düğmesinin ikonu (cards-three-fill), https://github.com/phosphor-icons/core
+Gruplar (cards-three-fill) ve IslandBar Araçları (toolbox-fill) düğmelerinin ikonları, https://github.com/phosphor-icons/core
 
 ```text
 MIT License
