@@ -189,7 +189,8 @@ public sealed class GroupItem : INotifyPropertyChanged
 
         // Kısayolun kendi kimliği varsa o kesindir: Chrome'un profil kısayolu bağımsız değişkenli olsa da eşleşir.
         string? executable = Executable();
-        if (_shortcutAppId != null && string.Equals(window.AppUserModelID, _shortcutAppId, StringComparison.OrdinalIgnoreCase))
+        if (_shortcutAppId != null && (string.Equals(window.AppUserModelID, _shortcutAppId, StringComparison.OrdinalIgnoreCase)
+            || IsFromPackage(window.WinFileName, _shortcutAppId)))
         {
             return true;
         }
@@ -268,7 +269,9 @@ public sealed class GroupItem : INotifyPropertyChanged
         else if (extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
             _executable = ShortcutTarget(Path);
-            _shortcutAppId = ShortcutAppId(Path);
+            // Paketli uygulamanın kısayolu (Microsoft Store) kimliği özellik olarak taşımaz, hedefinden okunur;
+            // yoksa açılan pencere pinle eşleşmez, çubukta ayrı düğme olur.
+            _shortcutAppId = ShortcutAppId(Path) ?? AppIcon.PackagedAppId(Path);
         }
         return _executable;
     }

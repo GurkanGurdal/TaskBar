@@ -149,7 +149,7 @@ internal static class AppIcon
     }
 
     /// <summary>Yalnızca paketli uygulamalarda kimlik döner; ötekilerde boş belge gerçek ikon olabilir.</summary>
-    private static string? PackagedAppId(string path)
+    internal static string? PackagedAppId(string path)
     {
         string? id = path.StartsWith(GroupItem.StoreAppPrefix, StringComparison.OrdinalIgnoreCase)
             ? path[GroupItem.StoreAppPrefix.Length..]

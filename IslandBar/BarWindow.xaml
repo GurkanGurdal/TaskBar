@@ -765,7 +765,11 @@
                                            RenderOptions.BitmapScalingMode="HighQuality"
                                            Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                                            Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
-                                           Loaded="TaskIcon_Loaded" />
+                                           Loaded="TaskIcon_Loaded">
+                                        <Image.Effect>
+                                            <DropShadowEffect Color="{StaticResource IconShadowColor}" Opacity="{StaticResource IconShadowOpacity}" BlurRadius="4" ShadowDepth="1" Direction="270" />
+                                        </Image.Effect>
+                                    </Image>
                                 </Button>
                                 <local:WindowMarks Style="{StaticResource WindowIndicator}"
                                                    Count="{Binding Windows.Count}"

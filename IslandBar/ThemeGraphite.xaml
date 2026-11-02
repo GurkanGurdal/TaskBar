@@ -46,6 +46,9 @@
 
     <!-- Gölgeler: siyah, yakın ve yoğun; açık duvar kâğıdında adayı zeminden ayırır -->
     <Color x:Key="ShadowColor">#000000</Color>
+    <!-- Çubuktaki uygulama ikonlarının altındaki kısa, yumuşak gölge (macOS Dock gibi): açık ikon açık zeminde de seçilsin -->
+    <Color x:Key="IconShadowColor">#000000</Color>
+    <sys:Double x:Key="IconShadowOpacity">0.6</sys:Double>
     <sys:Double x:Key="IslandShadowBlur">16</sys:Double>
     <sys:Double x:Key="IslandShadowDepth">3</sys:Double>
     <sys:Double x:Key="IslandShadowOpacity">0.45</sys:Double>
