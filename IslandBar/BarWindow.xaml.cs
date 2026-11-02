@@ -341,7 +341,6 @@ public partial class BarWindow : AppBarWindow
         IconSize = Math.Max(16, Math.Round(ButtonSize * 0.62));
         IsCompact = thickness < CompactThickness;
         Chip.SetThickness(thickness, IslandCornerRadius, IsCompact);
-        VolumeCard.SetThickness(thickness, IslandCornerRadius);
         double clockSize = Math.Clamp(Math.Round(ButtonSize * 0.58), 13, 26);
         ClockTime.SetValue(TextBlock.FontSizeProperty, clockSize);
         ClockDate.FontSize = Math.Clamp(Math.Round(ButtonSize * 0.32), 10, 13);
@@ -2727,7 +2726,7 @@ public partial class BarWindow : AppBarWindow
 
     #region Volume chip
     /// <summary>Ses tuşuna basıldı. Hızlı ayarlar açıksa orada kendi kaydırıcısı oynuyor, kart üstüne çıkmaz.</summary>
-    internal void ShowVolume(AudioEndpoint audio)
+    internal void ShowVolume(AudioEndpoint audio, bool changed)
     {
         if (HoldsBar(QuickPopup))
         {
@@ -2736,7 +2735,7 @@ public partial class BarWindow : AppBarWindow
 
         // Şarkı kartıyla aynı yerde duruyor.
         Chip.Dismiss();
-        VolumeCard.Present(audio);
+        VolumeCard.Present(audio, changed);
 
         if (!VolumePopup.IsOpen)
         {
@@ -2747,7 +2746,7 @@ public partial class BarWindow : AppBarWindow
 
     private async void VolumePopup_Opened(object? sender, EventArgs e)
     {
-        await VolumeCard.RevealAsync(TowardBar());
+        await VolumeCard.RevealAsync();
     }
 
     /// <summary>Çubuk ekranda değil: gizli ya da tam ekran pencerenin arkasında.</summary>
@@ -2783,7 +2782,11 @@ public partial class BarWindow : AppBarWindow
     {
         _volumeAtBarPlace = IsBarOutOfSight();
 
-        var size = new Size(VolumeChip.CardWidth, _settings.Thickness);
+        // Saat çipinin kutucuğuyla aynı boy: dikey çubukta alt alta, kısa; yatayda rakamlara göre geniş.
+        bool isTall = Orientation == Orientation.Vertical;
+        ClockDrops.Configure(_settings.Thickness, IslandCornerRadius, isTall);
+        Size size = isTall ? new Size(_settings.Thickness, ClockDrops.TileLength) : new Size(ClockDrops.TileLength, _settings.Thickness);
+        VolumeCard.SetSize(size, _settings.Thickness, IslandCornerRadius);
         double centerX = (ActualWidth - size.Width) / 2;
         double centerY = (ActualHeight - size.Height) / 2;
         (Point beside, Point atBar) = AppBarEdge switch

@@ -29,6 +29,12 @@ internal struct Spring
         _velocity = 0;
     }
 
+    /// <summary>Dürter: hedef değişmeden çıkar, salınıp geri döner.</summary>
+    public void Kick(double velocity)
+    {
+        _velocity += velocity;
+    }
+
     /// <summary>Elle konumlanır (fareyi izleyen öğe); bırakılınca durduğu yerden yaylanır.</summary>
     public void Hold(double value)
     {

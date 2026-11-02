@@ -211,8 +211,8 @@ public partial class App : Application
         {
             if (AudioEndpoint.TryOpen() is { } audio)
             {
-                audio.Press(key);
-                _bars.FirstOrDefault(bar => bar.Screen.Primary)?.ShowVolume(audio);
+                bool changed = audio.Press(key);
+                _bars.FirstOrDefault(bar => bar.Screen.Primary)?.ShowVolume(audio, changed);
             }
         }
         catch (COMException)

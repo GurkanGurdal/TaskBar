@@ -44,26 +44,27 @@ internal sealed class AudioEndpoint
     /// Ses tuşunun yaptığı iş, Windows'tan ölçüldü: düzey 50 adımlık ızgaraya yuvarlanıp bir adım gider (%33 yukarı %36,
     /// aşağı %32), yukarı sessizden çıkarır, aşağı çıkarmaz, sıfıra inmek sessize alır.
     /// </summary>
-    public void Press(VolumeKey key)
+    /// <returns>Bir şey değişti mi? Sınırdaki basış değiştirmez.</returns>
+    public bool Press(VolumeKey key)
     {
+        bool wasMuted = Muted;
         if (key == VolumeKey.Mute)
         {
-            Muted = !Muted;
-            return;
+            Muted = !wasMuted;
+            return true;
         }
 
+        float before = Level;
         int direction = key == VolumeKey.Up ? 1 : -1;
-        float level = Math.Clamp((MathF.Round(Level * KeySteps, MidpointRounding.AwayFromZero) + direction) / KeySteps, 0, 1);
+        float level = Math.Clamp((MathF.Round(before * KeySteps, MidpointRounding.AwayFromZero) + direction) / KeySteps, 0, 1);
         Level = level;
 
-        if (key == VolumeKey.Up)
+        bool muted = key == VolumeKey.Up ? false : wasMuted || level <= 0;
+        if (muted != wasMuted)
         {
-            Muted = false;
+            Muted = muted;
         }
-        else if (level <= 0)
-        {
-            Muted = true;
-        }
+        return level != before || muted != wasMuted;
     }
 
     public static AudioEndpoint? TryOpen()
