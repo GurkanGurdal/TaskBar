@@ -231,18 +231,14 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Uygulamanın durumu: gösterge yok kapalı pin, nokta çalışıyor, ışıklı çizgi etkin, kehribar dikkat istiyor -->
-        <Style x:Key="WindowIndicator" TargetType="Border">
+        <!-- Uygulamanın durumu (WindowMarks): gösterge yok kapalı pin; pencere sayısı kadar parça, etkin pencerenin parçası parlak, kehribar dikkat istiyor -->
+        <Style x:Key="WindowIndicator" TargetType="local:WindowMarks">
             <Setter Property="IsHitTestVisible" Value="False" />
             <Setter Property="Visibility" Value="{Binding HasWindows, Converter={StaticResource BoolToVisibility}}" />
-            <Setter Property="Width" Value="16" />
-            <Setter Property="Height" Value="3" />
-            <Setter Property="CornerRadius" Value="1.5" />
-            <Setter Property="Background" Value="{StaticResource MarkFill}" />
+            <Setter Property="Orientation" Value="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}" />
             <Setter Property="VerticalAlignment" Value="Bottom" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,0,1" />
-            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Top}">
                     <Setter Property="VerticalAlignment" Value="Top" />
@@ -252,99 +248,11 @@
                     <Setter Property="VerticalAlignment" Value="Center" />
                     <Setter Property="HorizontalAlignment" Value="Left" />
                     <Setter Property="Margin" Value="1,0,0,0" />
-                    <Setter Property="LayoutTransform">
-                        <Setter.Value>
-                            <RotateTransform Angle="90" />
-                        </Setter.Value>
-                    </Setter>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Right}">
                     <Setter Property="VerticalAlignment" Value="Center" />
                     <Setter Property="HorizontalAlignment" Value="Right" />
                     <Setter Property="Margin" Value="0,0,1,0" />
-                    <Setter Property="LayoutTransform">
-                        <Setter.Value>
-                            <RotateTransform Angle="90" />
-                        </Setter.Value>
-                    </Setter>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static tasks:ApplicationWindow+WindowState.Active}">
-                    <Setter Property="Background" Value="{StaticResource AccentFill}" />
-                    <DataTrigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.26">
-                                    <DoubleAnimation.EasingFunction>
-                                        <BackEase EasingMode="EaseOut" Amplitude="0.5" />
-                                    </DoubleAnimation.EasingFunction>
-                                </DoubleAnimation>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.EnterActions>
-                    <DataTrigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.3" Duration="0:0:0.18" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.ExitActions>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static tasks:ApplicationWindow+WindowState.Flashing}">
-                    <Setter Property="Background" Value="{StaticResource AttentionFill}" />
-                    <DataTrigger.EnterActions>
-                        <BeginStoryboard x:Name="Attention">
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.2" />
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.35" Duration="0:0:0.6" AutoReverse="True" RepeatBehavior="Forever" />
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.EnterActions>
-                    <DataTrigger.ExitActions>
-                        <StopStoryboard BeginStoryboardName="Attention" />
-                    </DataTrigger.ExitActions>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <!-- Birden çok pencere: göstergenin yanında küçük bir nokta -->
-        <Style x:Key="WindowIndicatorMore" TargetType="Border">
-            <Setter Property="Width" Value="3" />
-            <Setter Property="Height" Value="3" />
-            <Setter Property="CornerRadius" Value="1.5" />
-            <Setter Property="Background" Value="{StaticResource MarkMoreFill}" />
-            <Setter Property="IsHitTestVisible" Value="False" />
-            <Setter Property="VerticalAlignment" Value="Bottom" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,0,0,1" />
-            <Setter Property="RenderTransform">
-                <Setter.Value>
-                    <TranslateTransform X="11" />
-                </Setter.Value>
-            </Setter>
-            <Setter Property="Visibility" Value="{Binding HasMany, Converter={StaticResource BoolToVisibility}}" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Top}">
-                    <Setter Property="VerticalAlignment" Value="Top" />
-                    <Setter Property="Margin" Value="0,1,0,0" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Left}">
-                    <Setter Property="VerticalAlignment" Value="Center" />
-                    <Setter Property="HorizontalAlignment" Value="Left" />
-                    <Setter Property="Margin" Value="1,0,0,0" />
-                    <Setter Property="RenderTransform">
-                        <Setter.Value>
-                            <TranslateTransform Y="11" />
-                        </Setter.Value>
-                    </Setter>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Right}">
-                    <Setter Property="VerticalAlignment" Value="Center" />
-                    <Setter Property="HorizontalAlignment" Value="Right" />
-                    <Setter Property="Margin" Value="0,0,1,0" />
-                    <Setter Property="RenderTransform">
-                        <Setter.Value>
-                            <TranslateTransform Y="11" />
-                        </Setter.Value>
-                    </Setter>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -859,12 +767,10 @@
                                            Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                                            Loaded="TaskIcon_Loaded" />
                                 </Button>
-                                <Border Style="{StaticResource WindowIndicator}">
-                                    <Border.RenderTransform>
-                                        <ScaleTransform ScaleX="0.3" />
-                                    </Border.RenderTransform>
-                                </Border>
-                                <Border Style="{StaticResource WindowIndicatorMore}" />
+                                <local:WindowMarks Style="{StaticResource WindowIndicator}"
+                                                   Count="{Binding Windows.Count}"
+                                                   ActiveIndex="{Binding ActiveIndex}"
+                                                   State="{Binding State}" />
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

@@ -51,7 +51,6 @@
 
     <!-- Çalışan uygulama göstergeleri -->
     <SolidColorBrush x:Key="MarkFill" Color="#80FFFFFF" />
-    <SolidColorBrush x:Key="MarkMoreFill" Color="#B0FFFFFF" />
 
     <SolidColorBrush x:Key="TextPrimary" Color="#F4F6FB" />
     <SolidColorBrush x:Key="TextSecondary" Color="#A3ABBD" />

@@ -50,6 +50,9 @@ public sealed class TaskGroup : INotifyPropertyChanged
 
     public ApplicationWindow? ActiveWindow => Windows.FirstOrDefault(window => window.State == ApplicationWindow.WindowState.Active);
 
+    /// <summary>Göstergede parlayacak parça; etkin pencere yoksa -1.</summary>
+    public int ActiveIndex => ActiveWindow is { } active ? Windows.IndexOf(active) : -1;
+
     public ApplicationWindow.WindowState State
     {
         get
@@ -134,6 +137,10 @@ public sealed class TaskGroup : INotifyPropertyChanged
         if (e.PropertyName is nameof(ApplicationWindow.State) or nameof(ApplicationWindow.Title) or nameof(ApplicationWindow.Icon))
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(e.PropertyName));
+        }
+        if (e.PropertyName == nameof(ApplicationWindow.State))
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveIndex)));
         }
     }
 }
