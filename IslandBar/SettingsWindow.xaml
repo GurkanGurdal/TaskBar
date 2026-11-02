@@ -71,6 +71,11 @@
                            Foreground="#606060"
                            TextWrapping="Wrap"
                            Text="Son 10 görüntünün kopyası bu bilgisayarda şifresiz tutulur. Kapatınca yenisi eklenmez, eskileri kartın Temizle düğmesiyle silersin." />
+                <CheckBox Content="Kopyalanan metinleri IslandBar Araçları'nda tut" Margin="0,16,0,0" IsChecked="{Binding KeepCopiedText}" />
+                <TextBlock Margin="20,2,0,0"
+                           Foreground="#606060"
+                           TextWrapping="Wrap"
+                           Text="Son 10 metin yalnızca bellekte tutulur, diske yazılmaz; IslandBar kapanınca silinir. Parola yöneticilerinin gizli işaretlediği metinler alınmaz. Kapatınca liste de boşalır." />
                 <CheckBox Content="Spotify'da yeni şarkı başlayınca göster" Margin="0,16,0,0" IsChecked="{Binding ShowNowPlayingChip}" />
                 <TextBlock Margin="20,2,0,0"
                            Foreground="#606060"

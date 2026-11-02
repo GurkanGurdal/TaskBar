@@ -36,6 +36,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _showClaudeChip;
     private bool _showVolumeChip = true;
     private bool _keepScreenshots = true;
+    private bool _keepCopiedText = true;
     private BarTheme _theme = BarTheme.Glass;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -57,6 +58,13 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _keepScreenshots;
         set => SetField(ref _keepScreenshots, value);
+    }
+
+    /// <summary>Kopyalanan son metinler IslandBar Araçları'nda tutulsun (yalnızca bellekte).</summary>
+    public bool KeepCopiedText
+    {
+        get => _keepCopiedText;
+        set => SetField(ref _keepCopiedText, value);
     }
 
     public double Thickness

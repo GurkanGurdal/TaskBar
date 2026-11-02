@@ -84,6 +84,47 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <!-- Kopyalanan metin: tek satır, saat sağda (kullanıcının seçtiği liste düzeni) -->
+        <DataTemplate x:Key="CopiedTemplate" DataType="{x:Type local:CopiedText}">
+            <Border x:Name="Row"
+                    Height="32"
+                    Margin="0,0,0,2"
+                    Padding="10,0"
+                    CornerRadius="8"
+                    Background="Transparent"
+                    Cursor="Hand"
+                    ToolTip="{Binding ToolTipText}"
+                    MouseLeftButtonDown="Tile_MouseLeftButtonDown"
+                    MouseMove="Tile_MouseMove"
+                    MouseLeftButtonUp="Tile_MouseLeftButtonUp">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Kopyala" Click="CopyText_Click" />
+                        <Separator />
+                        <MenuItem Header="Listeden kaldır" Click="RemoveText_Click" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right"
+                               Margin="10,0,0,0"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{StaticResource TextSecondary}"
+                               Text="{Binding TimeLabel}" />
+                    <TextBlock VerticalAlignment="Center"
+                               FontSize="13"
+                               Foreground="{StaticResource TextPrimary}"
+                               TextTrimming="CharacterEllipsis"
+                               Text="{Binding Preview}" />
+                </DockPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Row" Property="Background" Value="{StaticResource HoverBrush}" />
+                </Trigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
         <DataTemplate x:Key="ShelfTemplate" DataType="{x:Type local:ShelfItem}">
             <Border x:Name="Tile"
                     Width="107"
@@ -165,6 +206,44 @@
                    Text="Henüz görüntü yok. Win + Shift + S ya da Win + PrtScn ile aldıkların burada birikir, son 10 tanesi saklanır." />
 
         <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+
+        <StackPanel x:Name="CopiedSection">
+            <DockPanel Margin="0,0,0,8">
+                <Button x:Name="CopiedClearButton"
+                        DockPanel.Dock="Right"
+                        Content="Temizle"
+                        ToolTip="Listeyi boşaltır."
+                        Style="{StaticResource ClearButton}"
+                        Click="CopiedClear_Click" />
+                <TextBlock Foreground="{StaticResource TextPrimary}" FontSize="13" VerticalAlignment="Center">
+                    <Run Text="Kopyalananlar" />
+                    <Run x:Name="CopiedCount" Foreground="{StaticResource TextSecondary}" FontSize="12" />
+                </TextBlock>
+            </DockPanel>
+
+            <!-- Beş satır görünür, fazlası tekerlekle kayar: kart ekranı kaplamasın -->
+            <ScrollViewer x:Name="CopiedScroll"
+                          MaxHeight="170"
+                          Margin="-10,0"
+                          Focusable="False"
+                          VerticalScrollBarVisibility="Hidden">
+                <ItemsControl x:Name="CopiedList" Focusable="False" ItemTemplate="{StaticResource CopiedTemplate}" />
+            </ScrollViewer>
+
+            <TextBlock x:Name="CopiedHint"
+                       Foreground="{StaticResource TextSecondary}"
+                       FontSize="12"
+                       Margin="0,8,0,0"
+                       Text="Tıklayınca yeniden kopyalanır, sürükleyip istediğin yere bırakabilirsin." />
+            <TextBlock x:Name="CopiedEmpty"
+                       Foreground="{StaticResource TextSecondary}"
+                       FontSize="12"
+                       Margin="0,2,0,6"
+                       TextWrapping="Wrap"
+                       Text="Henüz metin yok. Kopyaladığın son 10 metin burada birikir; yalnızca bellekte durur, IslandBar kapanınca silinir." />
+
+            <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+        </StackPanel>
 
         <DockPanel Margin="0,0,0,8">
             <Button x:Name="ShelfClearButton"

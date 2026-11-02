@@ -6,13 +6,15 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace IslandBar;
 
 /// <summary>
-/// "IslandBar Araçları" kartının içi: son ekran görüntüleri ve dosya rafı. Sürüklenen şey dosyanın kendisi olduğu için dosya
-/// kabul eden her yere bırakılabilir (tarayıcı, sohbet kutusu, Gezgin). Ekran görüntüsü her zaman kopyalanır, geçmişten
-/// silinmez. Raftaki dosya gerçek dosya gibi davranır: aynı sürücüdeki klasöre bırakılınca taşınır, raftan düşer.
+/// "IslandBar Araçları" kartının içi: son ekran görüntüleri, kopyalanan son metinler ve dosya rafı. Sürüklenen şey dosyanın
+/// kendisi olduğu için dosya kabul eden her yere bırakılabilir (tarayıcı, sohbet kutusu, Gezgin). Ekran görüntüsü her zaman
+/// kopyalanır, geçmişten silinmez. Raftaki dosya gerçek dosya gibi davranır: aynı sürücüdeki klasöre bırakılınca taşınır,
+/// raftan düşer. Metin tıklanınca panoya geri konur, sürüklenince metin olarak bırakılır.
 /// </summary>
 public partial class ToolsPanel : UserControl
 {
@@ -21,8 +23,11 @@ public partial class ToolsPanel : UserControl
 
     private const double GhostWidth = 170;
     private const double ShelfGhostSize = 56;
+    private const double TextGhostWidth = 220;
+    private const double TextGhostHeight = 34;
 
     private readonly ScreenshotHistory _history = ScreenshotHistory.Shared;
+    private readonly ClipboardHistory _copied = ClipboardHistory.Shared;
     private readonly FileShelf _shelf = FileShelf.Shared;
     private FrameworkElement? _pressedTile;
     private Point _pressPoint;
@@ -40,6 +45,7 @@ public partial class ToolsPanel : UserControl
         }
 
         ShotList.ItemsSource = _history.Items;
+        CopiedList.ItemsSource = _copied.Items;
         ShelfList.ItemsSource = _shelf.Items;
         UpdateState();
 
@@ -47,21 +53,24 @@ public partial class ToolsPanel : UserControl
         Loaded += (_, _) =>
         {
             _history.Items.CollectionChanged += Items_CollectionChanged;
+            _copied.Items.CollectionChanged += Items_CollectionChanged;
             _shelf.Items.CollectionChanged += Items_CollectionChanged;
             UpdateState();
         };
         Unloaded += (_, _) =>
         {
             _history.Items.CollectionChanged -= Items_CollectionChanged;
+            _copied.Items.CollectionChanged -= Items_CollectionChanged;
             _shelf.Items.CollectionChanged -= Items_CollectionChanged;
         };
 
-        // Kart kapalıyken dosya taşınmış ya da silinmiş olabilir.
+        // Kart kapalıyken dosya taşınmış ya da silinmiş olabilir; metin ayarı da değişmiş olabilir.
         IsVisibleChanged += (_, e) =>
         {
             if ((bool)e.NewValue)
             {
                 _shelf.Prune();
+                UpdateState();
             }
         };
     }
@@ -91,6 +100,14 @@ public partial class ToolsPanel : UserControl
         ClearButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ShotHint.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyHint.Visibility = count > 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        int copied = _copied.Items.Count;
+        CopiedSection.Visibility = _copied.IsWatching ? Visibility.Visible : Visibility.Collapsed;
+        CopiedCount.Text = copied > 0 ? $"{copied} / {ClipboardHistory.MaxItems}" : string.Empty;
+        CopiedClearButton.Visibility = copied > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CopiedScroll.Visibility = copied > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CopiedHint.Visibility = copied > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CopiedEmpty.Visibility = copied > 0 ? Visibility.Collapsed : Visibility.Visible;
 
         int shelved = _shelf.Items.Count;
         ShelfCount.Text = shelved > 0 ? shelved.ToString(CultureInfo.CurrentCulture) : string.Empty;
@@ -160,17 +177,39 @@ public partial class ToolsPanel : UserControl
         _pressedTile.ReleaseMouseCapture();
         _pressedTile = null;
         e.Handled = true;
-        if (!_dragged && sender != ShelfAll)
+        if (_dragged || sender == ShelfAll)
+        {
+            return;
+        }
+
+        // Metin panoya geri konur; kart kapanır ki kullanıcı hemen yapıştırsın.
+        if (((FrameworkElement)sender).DataContext is CopiedText text)
+        {
+            _copied.CopyToClipboard(text);
+        }
+        else
         {
             OpenFile(((FrameworkElement)sender).DataContext is ScreenshotItem shot ? shot.Path : ShelfItemOf(sender).Path);
-            Opened?.Invoke();
         }
+        Opened?.Invoke();
     }
 
     private void StartDrag(FrameworkElement tile)
     {
         string[] paths;
         DragDropEffects allowed;
+        DataObject data;
+
+        if (tile.DataContext is CopiedText text)
+        {
+            // Metin olarak: yazı kabul eden her yere (sohbet kutusu, belge, arama çubuğu) bırakılır.
+            data = new DataObject(DataFormats.UnicodeText, text.Text);
+            data.SetData(DataFormats.Text, text.Text);
+            data.SetData(InternalDragFormat, true);
+            _ghost = new DragGhost(TextGhostImage(text.Preview), TextGhostWidth, TextGhostHeight);
+            RunDrag(tile, data, DragDropEffects.Copy);
+            return;
+        }
 
         if (tile.DataContext is ScreenshotItem shot)
         {
@@ -195,9 +234,13 @@ public partial class ToolsPanel : UserControl
             }
         }
 
-        var data = new DataObject(DataFormats.FileDrop, paths);
+        data = new DataObject(DataFormats.FileDrop, paths);
         data.SetData(InternalDragFormat, true);
+        RunDrag(tile, data, allowed);
+    }
 
+    private void RunDrag(FrameworkElement tile, DataObject data, DragDropEffects allowed)
+    {
         _ghost?.Show();
         CompositionTarget.Rendering += CompositionTarget_Rendering;
         tile.QueryContinueDrag += Tile_QueryContinueDrag;
@@ -219,6 +262,36 @@ public partial class ToolsPanel : UserControl
         }
     }
 
+    /// <summary>Sürüklenen metnin görseli: kart zemininde tek satır, ekranın ölçeğinde çizilir.</summary>
+    private BitmapSource TextGhostImage(string text)
+    {
+        var label = new Border
+        {
+            Width = TextGhostWidth,
+            Height = TextGhostHeight,
+            Padding = new Thickness(10, 0, 10, 0),
+            Background = (Brush)FindResource("PopupFill"),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontFamily = (FontFamily)FindResource("UiFont"),
+                FontSize = 13,
+                Foreground = (Brush)FindResource("TextPrimary"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+        label.Measure(new Size(TextGhostWidth, TextGhostHeight));
+        label.Arrange(new Rect(0, 0, TextGhostWidth, TextGhostHeight));
+
+        double scale = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(TextGhostWidth * scale), (int)Math.Ceiling(TextGhostHeight * scale),
+            96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(label);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
     private void CompositionTarget_Rendering(object? sender, EventArgs e)
     {
         _ghost?.FollowCursor();
@@ -227,6 +300,22 @@ public partial class ToolsPanel : UserControl
     private void Tile_QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
     {
         _ghost?.FollowCursor();
+    }
+
+    private void CopiedClear_Click(object sender, RoutedEventArgs e)
+    {
+        _copied.Clear();
+    }
+
+    private void CopyText_Click(object sender, RoutedEventArgs e)
+    {
+        _copied.CopyToClipboard((CopiedText)((FrameworkElement)sender).DataContext);
+        Opened?.Invoke();
+    }
+
+    private void RemoveText_Click(object sender, RoutedEventArgs e)
+    {
+        _copied.Remove((CopiedText)((FrameworkElement)sender).DataContext);
     }
 
     private void ShelfClear_Click(object sender, RoutedEventArgs e)

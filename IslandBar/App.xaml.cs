@@ -120,6 +120,7 @@ public partial class App : Application
         ApplyTaskbarMode(_settings.HideWindowsTaskbar);
 
         ScreenshotHistory.Shared.SetWatching(_settings.KeepScreenshots);
+        ClipboardHistory.Shared.SetWatching(_settings.KeepCopiedText);
 
         OpenBars();
 
@@ -157,6 +158,10 @@ public partial class App : Application
         else if (e.PropertyName == nameof(AppSettings.KeepScreenshots))
         {
             ScreenshotHistory.Shared.SetWatching(_settings!.KeepScreenshots);
+        }
+        else if (e.PropertyName == nameof(AppSettings.KeepCopiedText))
+        {
+            ClipboardHistory.Shared.SetWatching(_settings!.KeepCopiedText);
         }
         else if (e.PropertyName == nameof(AppSettings.CustomStartMenu))
         {

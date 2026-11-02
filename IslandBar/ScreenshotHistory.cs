@@ -207,8 +207,8 @@ public sealed class ScreenshotHistory
         }
     }
 
-    /// <summary>Parola yöneticilerinin kullandığı işaretler; uygulama görüntüyü izleyicilerden saklamak istemiş.</summary>
-    private static bool IsMarkedPrivate()
+    /// <summary>Parola yöneticilerinin kullandığı işaretler; uygulama içeriği izleyicilerden saklamak istemiş.</summary>
+    internal static bool IsMarkedPrivate()
     {
         return Clipboard.ContainsData("ExcludeClipboardContentFromMonitorProcessing")
             || Clipboard.ContainsData("Clipboard Viewer Ignore")
