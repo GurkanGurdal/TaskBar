@@ -10,11 +10,12 @@ namespace IslandBar;
 public enum BarTheme
 {
     Glass,
-    White
+    White,
+    Graphite
 }
 
 /// <summary>
-/// Paleti (ThemeGlass.xaml, ThemeWhite.xaml) uygulama kaynaklarına koyar. Pencereler renkleri StaticResource ile
+/// Paleti (ThemeGlass.xaml, ThemeWhite.xaml, ThemeGraphite.xaml) uygulama kaynaklarına koyar. Pencereler renkleri StaticResource ile
 /// bir kez okur: tema değişince çubuklar kapatılıp yeniden açılır (App.Settings_PropertyChanged).
 /// </summary>
 internal static class ThemeManager
@@ -22,13 +23,22 @@ internal static class ThemeManager
     /// <summary>Camsız temada ekran hiç alınmaz: ne işlemci harcanır ne de çubuk ekran görüntülerinden hariç tutulur.</summary>
     public static bool UsesGlass { get; private set; } = true;
 
+    /// <summary>Açık zemin: beyaz ikonlar koyulaşır, kapak rengi koyulur, kapağın bulanık zemini çizilmez.</summary>
+    public static bool IsLight { get; private set; }
+
     public static void Apply(BarTheme theme)
     {
         UsesGlass = theme == BarTheme.Glass;
+        IsLight = theme == BarTheme.White;
 
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         dictionaries.Clear();
-        dictionaries.Add(Load(theme == BarTheme.White ? "ThemeWhite.xaml" : "ThemeGlass.xaml"));
+        dictionaries.Add(Load(theme switch
+        {
+            BarTheme.White => "ThemeWhite.xaml",
+            BarTheme.Graphite => "ThemeGraphite.xaml",
+            _ => "ThemeGlass.xaml"
+        }));
 
         // Sıra önemli: buradaki stiller paleti uygulama kaynaklarından okur.
         dictionaries.Add(Load("Theme.xaml"));
@@ -64,7 +74,7 @@ public sealed class IconInkConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (ThemeManager.UsesGlass || value is not BitmapSource source)
+        if (!ThemeManager.IsLight || value is not BitmapSource source)
         {
             return value;
         }

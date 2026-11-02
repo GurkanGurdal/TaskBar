@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <!-- Grafit tema: cam yok, opak koyu gri (siyah değil; Apple'ın koyu modundaki yükseltilmiş yüzey gibi; koyu pencerelerin önünde de ayrılsın diye #1C1C1E ile #2C2C2E arasında). Koyu zeminde gölge
+         az görünür, derinlik üstten vuran ince açık kenardan gelir. Anahtarlar ThemeGlass.xaml ile aynı olmalı. -->
+
+    <!-- Yüzeyler -->
+    <Color x:Key="SurfaceColor">#26272B</Color>
+    <LinearGradientBrush x:Key="IslandStroke" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#33FFFFFF" Offset="0" />
+        <GradientStop Color="#12FFFFFF" Offset="0.45" />
+        <GradientStop Color="#0DFFFFFF" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="IslandSheen" Color="Transparent" />
+    <SolidColorBrush x:Key="PopupFill" Color="#26272B" />
+    <SolidColorBrush x:Key="StartBodyVeil" Color="Transparent" />
+    <SolidColorBrush x:Key="MenuVeil" Color="Transparent" />
+    <SolidColorBrush x:Key="StartRailFill" Color="#24000000" />
+    <SolidColorBrush x:Key="FooterFill" Color="#1F000000" />
+
+    <!-- Vurgu: camdaki gibi kırık beyaz dolgu, üstünde grafit. Koyu zeminde tek parlak yüzey bu. -->
+    <SolidColorBrush x:Key="AccentFill" Color="#ECECEF" />
+    <SolidColorBrush x:Key="AccentInk" Color="#1A1B1E" />
+    <SolidColorBrush x:Key="OnAccentHover" Color="#14000000" />
+    <SolidColorBrush x:Key="OnAccentDivider" Color="#26000000" />
+    <SolidColorBrush x:Key="FolderGradient" Color="#F2A93B" />
+    <SolidColorBrush x:Key="AttentionFill" Color="#F5A742" />
+
+    <!-- Düğme ve kutu zeminleri: yükseklik beyazın opaklığıyla -->
+    <SolidColorBrush x:Key="SubtleFill" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="SubtleStroke" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="MutedFill" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="RailTrack" Color="#2EFFFFFF" />
+    <SolidColorBrush x:Key="DividerBrush" Color="#17FFFFFF" />
+    <SolidColorBrush x:Key="HoverBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="ActiveBrush" Color="#21FFFFFF" />
+    <SolidColorBrush x:Key="DropHighlight" Color="#33FFFFFF" />
+    <SolidColorBrush x:Key="ShotStroke" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="ShotStrokeHover" Color="#8CFFFFFF" />
+
+    <!-- Çalışan uygulama göstergeleri -->
+    <SolidColorBrush x:Key="MarkFill" Color="#73FFFFFF" />
+    <SolidColorBrush x:Key="MarkMoreFill" Color="#A6FFFFFF" />
+
+    <SolidColorBrush x:Key="TextPrimary" Color="#EDEDF0" />
+    <SolidColorBrush x:Key="TextSecondary" Color="#9B9CA3" />
+
+    <!-- Gölgeler: siyah, yakın ve yoğun; açık duvar kâğıdında adayı zeminden ayırır -->
+    <Color x:Key="ShadowColor">#000000</Color>
+    <sys:Double x:Key="IslandShadowBlur">16</sys:Double>
+    <sys:Double x:Key="IslandShadowDepth">3</sys:Double>
+    <sys:Double x:Key="IslandShadowOpacity">0.45</sys:Double>
+    <sys:Double x:Key="CardShadowBlur">24</sys:Double>
+    <sys:Double x:Key="CardShadowDepth">6</sys:Double>
+    <sys:Double x:Key="CardShadowDirection">270</sys:Double>
+    <sys:Double x:Key="CardShadowOpacity">0.5</sys:Double>
+</ResourceDictionary>

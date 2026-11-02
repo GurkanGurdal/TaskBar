@@ -1675,7 +1675,7 @@ public partial class QuickSettingsPanel : UserControl
         double luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 
         // Açık zeminde renk gerektiği kadar koyulaşır; koyu camda aydınlanır.
-        if (!ThemeManager.UsesGlass)
+        if (ThemeManager.IsLight)
         {
             double dim = luma <= MaxAccentLumaOnLight ? 1 : MaxAccentLumaOnLight / luma;
             return Color.FromRgb((byte)(red * dim), (byte)(green * dim), (byte)(blue * dim));
@@ -1726,7 +1726,7 @@ public partial class QuickSettingsPanel : UserControl
                 MediaBackdrop.ImageSource = art;
                 
                 // Beyaz temada yok: açık yüzeyde kapağın bulanık hali kirli griye dönüyor.
-                MediaBackdropHost.Visibility = art != null && ThemeManager.UsesGlass ? Visibility.Visible : Visibility.Collapsed;
+                MediaBackdropHost.Visibility = art != null && !ThemeManager.IsLight ? Visibility.Visible : Visibility.Collapsed;
                 MediaProgress.Foreground = new SolidColorBrush(art != null ? CoverAccent(art) : ThemeManager.AccentColor);
                 if (newTrack)
                 {

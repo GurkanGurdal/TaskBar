@@ -748,6 +748,7 @@
                             MouseEnter="PanelButton_MouseEnter"
                             AutomationProperties.Name="Hızlı ayarlar"
                             ToolTip="Hızlı ayarlar"
+                            MouseWheel="QuickButton_MouseWheel"
                             Click="QuickButton_Click">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
@@ -795,6 +796,7 @@
                                 VerticalAlignment="Center"
                                 MouseEnter="Clock_MouseEnter"
                                 MouseLeave="Clock_MouseLeave"
+                                MouseLeftButtonDown="Clock_MouseLeftButtonDown"
                                 Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
@@ -879,6 +881,8 @@
                                         MouseEnter="TaskButton_MouseEnter"
                                         MouseLeave="TaskButton_MouseLeave"
                                         ContextMenuOpening="TaskButton_ContextMenuOpening"
+                                        MouseUp="TaskButton_MouseUp"
+                                        MouseWheel="TaskButton_MouseWheel"
                                         Click="TaskButton_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
@@ -982,6 +986,26 @@
                                  SizeChanged="PopupCard_SizeChanged"
                                  CornerRadius="16">
                     <local:ToolsPanel x:Name="ToolsContent" />
+                </local:GlassCard>
+            </Border>
+        </Popup>
+
+        <!-- Takvim: saate tıklayınca -->
+        <Popup x:Name="CalendarPopup"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               PlacementTarget="{Binding ElementName=Clock}"
+               Opened="Popup_OpenedOrClosed"
+               Closed="Popup_OpenedOrClosed">
+            <Border Padding="20">
+                <local:GlassCard x:Name="CalendarCard"
+                                 Width="300"
+                                 Padding="16,14,16,12"
+                                 BlurRadius="24"
+                                 AllowDrop="False"
+                                 SizeChanged="PopupCard_SizeChanged"
+                                 CornerRadius="16">
+                    <local:CalendarPanel x:Name="CalendarContent" />
                 </local:GlassCard>
             </Border>
         </Popup>
@@ -1093,6 +1117,22 @@
                                 <TextBlock Text="Yeni grup" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
+                        <Button DockPanel.Dock="Right"
+                                Style="{StaticResource PanelGhostButton}"
+                                Margin="0,0,6,0"
+                                AutomationProperties.Name="Yeni düzen"
+                                ToolTip="Uygulamaları açıp dizdiğin hali grup olarak kaydeder"
+                                Click="NewLayout_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Yan yana iki pencere -->
+                                <Path Data="M1.5,0.75 H10.5 A0.75,0.75 0 0 1 11.25,1.5 V8.5 A0.75,0.75 0 0 1 10.5,9.25 H1.5 A0.75,0.75 0 0 1 0.75,8.5 V1.5 A0.75,0.75 0 0 1 1.5,0.75 Z M6,0.75 V9.25"
+                                      Stroke="{StaticResource TextPrimary}"
+                                      StrokeThickness="1.3"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,6,0" />
+                                <TextBlock Text="Yeni düzen" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                         <TextBlock Text="Gruplar"
                                    Foreground="{StaticResource TextPrimary}"
                                    FontSize="15"
@@ -1139,6 +1179,11 @@
                                                         <MenuItem Header="İkon seç..." Click="ChooseIconItem_Click" />
                                                         <MenuItem Header="Varsayılan ikon" Click="ResetIconItem_Click" />
                                                         <Separator />
+                                                        <MenuItem Header="Düzeni yeniden düzenle"
+                                                                  ToolTip="Uygulamaları yerlerinde açar ve düzenleme moduna geçer"
+                                                                  Visibility="{Binding HasLayout, Converter={StaticResource BoolToVisibility}}"
+                                                                  Click="EditLayoutItem_Click" />
+                                                        <Separator Visibility="{Binding HasLayout, Converter={StaticResource BoolToVisibility}}" />
                                                         <MenuItem Header="Sil" Click="DeleteGroupItem_Click" />
                                                     </ContextMenu>
                                                 </DockPanel.ContextMenu>
@@ -1149,7 +1194,7 @@
                                                         Content="Hepsini aç"
                                                         Margin="6,0,0,0"
                                                         AutomationProperties.Name="{Binding Name, StringFormat={}{0} hepsini aç}"
-                                                        ToolTip="Açık olmayanları açar, açık olanları öne getirir"
+                                                        ToolTip="Açık olmayanları açar, açık olanları öne getirir; düzen kayıtlıysa pencereleri yerlerine koyar"
                                                         Click="OpenAllButton_Click" />
                                                 <Button DockPanel.Dock="Right"
                                                         Style="{StaticResource PanelGhostButton}"

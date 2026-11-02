@@ -78,6 +78,14 @@ public partial class BarWindow : AppBarWindow
     private const int PreviewHideDelayMs = 250;
     private const int PreviewFadeMs = 130;
 
+    /// <summary>Kısayolla açılan uygulamanın penceresi bu süre içinde gelirse öne alınır.</summary>
+    private const int LaunchFocusMs = 15000;
+
+    /// <summary>Çalışma düzeninde açılan uygulamanın penceresi en çok bu kadar beklenir.</summary>
+    private const int LayoutWaitMs = 20000;
+    private const int LayoutPollMs = 150;
+    private const int LayoutSettleMs = 1000;
+
     /// <summary>Düğmenin üzerinden geçip giderken kart hazırlanmasın.</summary>
     private const int HoverPrepareDelayMs = 30;
     private const int PrepareIntervalMs = 1500;
@@ -153,6 +161,7 @@ public partial class BarWindow : AppBarWindow
     private GlassCard? _dragOpenCard;
     private bool _startMenuWasOpen;
     private readonly ObservableCollection<TaskGroup> _taskGroups = new();
+    private int _wheelRemainder;
     private TaskGroup? _pressedTaskGroup;
     private TaskGroup? _draggedGroup;
     private Point? _taskDragStart;
@@ -291,6 +300,7 @@ public partial class BarWindow : AppBarWindow
         ToolsContent.DragStarted += ToolsContent_DragStarted;
         ToolsContent.DragFinished += ToolsContent_DragFinished;
         ToolsContent.Opened += ClosePanel;
+        CalendarContent.Opened += ClosePanel;
 
         // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
         if (Screen.Primary)
@@ -446,7 +456,7 @@ public partial class BarWindow : AppBarWindow
         // Çubuk gizliyken ada izlenmez, ama şarkı kartı adanın yerinde duruyor olabilir.
         System.Drawing.Rectangle[]? islandStrips = !IsIslandOffScreen() && TryGetIslandRestRect(out System.Drawing.Rectangle island) ? IslandStrips(island) : null;
         Popup? card = GroupPanel.IsOpen ? GroupPanel : TrayPopup.IsOpen ? TrayPopup : ToolsPopup.IsOpen ? ToolsPopup : QuickPopup.IsOpen ? QuickPopup : StartPopup.IsOpen ? StartPopup
-            : Chip.IsShown && !Chip.IsHiding ? ChipPopup : null;
+            : CalendarPopup.IsOpen ? CalendarPopup : Chip.IsShown && !Chip.IsHiding ? ChipPopup : null;
         System.Drawing.Rectangle[]? cardStrips = card != null ? CardStrips(card) : null;
         if (islandStrips == null && cardStrips == null)
         {
@@ -498,7 +508,7 @@ public partial class BarWindow : AppBarWindow
             _ = card == QuickPopup ? QuickPanel.RefreshGlassAsync(animateTint: true)
                 : card == StartPopup ? StartPanel.RefreshGlassAsync(animateTint: true)
                 : card == ChipPopup ? Chip.RefreshGlassAsync()
-                : (card == GroupPanel ? PanelCard : card == ToolsPopup ? ToolsCard : TrayCard).RefreshGlassAsync(animateTint: true);
+                : CardOf(card).RefreshGlassAsync(animateTint: true);
         }
     }
 
@@ -735,7 +745,7 @@ public partial class BarWindow : AppBarWindow
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
         return base.ShouldAllowAutoHide() && !_cursorInBarZone && !HoldsBar(GroupPanel) && !HoldsBar(TrayPopup) && !HoldsBar(ToolsPopup)
-            && !HoldsBar(PreviewPopup) && !HoldsBar(QuickPopup) && !HoldsBar(StartPopup) && _geniesPlaying == 0 && !(_startMenuVisible && Screen.Primary)
+            && !HoldsBar(CalendarPopup) && !HoldsBar(PreviewPopup) && !HoldsBar(QuickPopup) && !HoldsBar(StartPopup) && _geniesPlaying == 0 && !(_startMenuVisible && Screen.Primary)
             && _draggedGroup == null;
     }
 
@@ -750,7 +760,7 @@ public partial class BarWindow : AppBarWindow
         OnPropertyChanged(nameof(AllowAutoHide));
 
         var popup = (Popup)sender!;
-        GlassCard card = popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : popup == ToolsPopup ? ToolsCard : PreviewCard;
+        GlassCard card = CardOf(popup);
 
         if (!popup.IsOpen)
         {
@@ -776,8 +786,14 @@ public partial class BarWindow : AppBarWindow
         }
         else
         {
-            RevealPopup(popup, card, popup == GroupPanel ? GroupsButton : popup == ToolsPopup ? ToolsButton : TrayOverflowButton);
+            RevealPopup(popup, card, CardAndButton(popup).Button);
         }
+    }
+
+    /// <summary>Kendi cam kartı olan açılır kartlar; hızlı ayarlar ve Başlat kartın kendisi.</summary>
+    private GlassCard CardOf(Popup popup)
+    {
+        return popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : popup == ToolsPopup ? ToolsCard : popup == CalendarPopup ? CalendarCard : PreviewCard;
     }
 
     private void AutoHideTimer_Tick(object? sender, EventArgs e)
@@ -1179,6 +1195,16 @@ public partial class BarWindow : AppBarWindow
     /// </summary>
     private void ForceForeground()
     {
+        TakeForeground();
+        Activate();
+    }
+
+    /// <summary>
+    /// Ön plan izni: kancadan ya da tekerlekten gelen istekte Windows başka pencereyi öne almaya izin vermez, açılan
+    /// uygulama da arkada kalır. Etkin pencerenin girdisine bir an bağlanıp çubuğu öne alınca ikisi de olur.
+    /// </summary>
+    private void TakeForeground()
+    {
         IntPtr foreground = NativeMethods.GetForegroundWindow();
         uint foregroundThread = NativeMethods.GetWindowThreadProcessId(foreground, out _);
         uint thisThread = GetCurrentThreadId();
@@ -1188,7 +1214,6 @@ public partial class BarWindow : AppBarWindow
         {
             AttachThreadInput(thisThread, foregroundThread, false);
         }
-        Activate();
     }
 
     [DllImport("user32")]
@@ -1196,6 +1221,7 @@ public partial class BarWindow : AppBarWindow
 
     [DllImport("user32")]
     private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
 
     [DllImport("kernel32")]
     private static extern uint GetCurrentThreadId();
@@ -1483,8 +1509,34 @@ public partial class BarWindow : AppBarWindow
         UpdateQuickGlyphs();
     }
 
+    /// <summary>Saate tıklamak takvimi açar; öteki kart düğmeleri gibi basınca.</summary>
+    private void Clock_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Pencereye ulaşırsa açılan kartı hemen kapatır.
+        e.Handled = true;
+
+        EndWarm();
+        bool wasOpen = CalendarPopup.IsOpen;
+        if (!wasOpen)
+        {
+            StartOpening(CalendarPopup);
+        }
+
+        ClosePanel();
+
+        if (!wasOpen)
+        {
+            CalendarContent.ShowToday();
+            PlacePopup(CalendarPopup, CalendarCard);
+            Activate();
+            CalendarPopup.IsOpen = true;
+        }
+    }
+
     private void Clock_MouseEnter(object sender, MouseEventArgs e)
     {
+        PanelButton_MouseEnter(sender, e);
+
         // İnce çubukta iki satır sığmaz, dikey çubukta tarih ipucunda.
         if (_settings.ShowDate && !IsCompact && Orientation == Orientation.Horizontal)
         {
@@ -1566,6 +1618,7 @@ public partial class BarWindow : AppBarWindow
 
     private void BarWindow_Closed(object? sender, EventArgs e)
     {
+        LayoutEditor.StopFor(this);
         _settings.PropertyChanged -= Settings_PropertyChanged;
         _stage.Dispose();
         _nowPlaying?.Dispose();
@@ -2158,6 +2211,81 @@ public partial class BarWindow : AppBarWindow
             return;
         }
 
+        SwitchTo(group, active);
+    }
+
+    /// <summary>
+    /// Win+1…9, 0: çubuktaki o sıradaki düğmeye basmak gibi (Windows'taki gibi soldan sayılır, 0 onuncu).
+    /// Shift ile yeni kopya açar; sabitlenmemiş uygulamada çalışan pencerenin exe'si ya da kimliği başlatılır.
+    /// </summary>
+    internal void PressTaskAt(int index, bool newInstance)
+    {
+        if (index >= _taskGroups.Count || _draggedGroup != null)
+        {
+            return;
+        }
+
+        TaskGroup group = _taskGroups[index];
+        ClosePanel();
+        HidePreview();
+
+        GroupItem? launch = group.Pin is { } pin && (!group.HasWindows || newInstance) ? pin
+            : newInstance ? PinItemFor(group.Windows[0])
+            : null;
+        ApplicationWindow? active = group.ActiveWindow;
+        if (launch != null)
+        {
+            if (Launcher.Launch(launch))
+            {
+                BringForwardWhenOpened(group);
+            }
+            else
+            {
+                ReportFailures([launch]);
+            }
+        }
+        else if (!newInstance)
+        {
+            // Küçültmek izin istemez; Windows sıradaki pencereyi kendisi etkinleştirir.
+            if (group.HasMany || active is not { CanMinimize: true })
+            {
+                TakeForeground();
+            }
+            SwitchTo(group, active);
+        }
+    }
+
+    /// <summary>
+    /// Kısayolla açılan uygulama arkada açılıyor: izin Windows'ta açılış anında verilir, kancadan gelen istekte
+    /// verilmez, çubuğu öne almak da yetmedi. Yeni penceresi gelince öne alınır.
+    /// </summary>
+    private void BringForwardWhenOpened(TaskGroup group)
+    {
+        List<ApplicationWindow> known = group.Windows.ToList();
+        long until = Environment.TickCount64 + LaunchFocusMs;
+
+        void Windows_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            ApplicationWindow? opened = group.Windows.Except(known).FirstOrDefault();
+            if (opened == null && Environment.TickCount64 < until)
+            {
+                return;
+            }
+
+            group.Windows.CollectionChanged -= Windows_CollectionChanged;
+            if (opened != null && Environment.TickCount64 < until && opened.State != ApplicationWindow.WindowState.Active)
+            {
+                TakeForeground();
+                opened.BringToFront();
+            }
+        }
+
+        group.Windows.CollectionChanged += Windows_CollectionChanged;
+    }
+
+    /// <summary>Tek pencerede öne getirir ya da küçültür; çok pencerede sıradakine geçer.</summary>
+    private static void SwitchTo(TaskGroup group, ApplicationWindow? active)
+    {
         if (group.HasMany)
         {
             group.NextWindow(active).BringToFront();
@@ -2170,6 +2298,59 @@ public partial class BarWindow : AppBarWindow
         {
             group.Windows[0].BringToFront();
         }
+    }
+
+    /// <summary>Orta tık pencereyi kapatır; birden çok pencerede etkin olanı ya da en son etkin olanı.</summary>
+    private void TaskButton_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        TaskGroup group = GroupOfTask(sender);
+        if (e.ChangedButton != MouseButton.Middle || !group.HasWindows)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        HidePreview();
+        (group.ActiveWindow ?? group.NextWindow(null)).Close();
+    }
+
+    /// <summary>Tekerlek uygulamanın pencereleri arasında gezer: aşağı sıradaki, yukarı önceki.</summary>
+    private void TaskButton_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        TaskGroup group = GroupOfTask(sender);
+        e.Handled = true;
+        int notches = WheelNotches(e);
+        if (!group.HasWindows || notches == 0)
+        {
+            return;
+        }
+
+        ApplicationWindow? active = group.ActiveWindow;
+        ApplicationWindow next = active == null
+            ? group.NextWindow(null)
+            : group.Windows[((group.Windows.IndexOf(active) - notches) % group.Windows.Count + group.Windows.Count) % group.Windows.Count];
+        if (next != active)
+        {
+            TakeForeground();
+            next.BringToFront();
+        }
+    }
+
+    /// <summary>
+    /// Tam çentik sayısı, yukarı artı. Dokunmatik yüzey çentiği parça parça gönderir: artan kısım biriktirilir,
+    /// yön değişince sıfırlanır.
+    /// </summary>
+    private int WheelNotches(MouseWheelEventArgs e)
+    {
+        if (Math.Sign(e.Delta) != Math.Sign(_wheelRemainder))
+        {
+            _wheelRemainder = 0;
+        }
+
+        _wheelRemainder += e.Delta;
+        int notches = _wheelRemainder / Mouse.MouseWheelDeltaForOneLine;
+        _wheelRemainder -= notches * Mouse.MouseWheelDeltaForOneLine;
+        return notches;
     }
 
     private void LaunchPinItem_Click(object sender, RoutedEventArgs e)
@@ -2267,7 +2448,7 @@ public partial class BarWindow : AppBarWindow
         _previewHideTimer.Stop();
 
         // Çipin üzerine gelen fare o an arkasında kalan düğmeyi istemiyor, çubuğu açmak istiyor.
-        if (_draggedGroup != null || ClockChipProgress > 0 || !GroupOfTask(button).HasWindows || GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        if (_draggedGroup != null || ClockChipProgress > 0 || !GroupOfTask(button).HasWindows || GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || button.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -2451,6 +2632,10 @@ public partial class BarWindow : AppBarWindow
         {
             PlacePopup(ToolsPopup, ToolsCard);
         }
+        else if (sender == CalendarCard)
+        {
+            PlacePopup(CalendarPopup, CalendarCard);
+        }
         else if (sender == QuickPanel)
         {
             PlacePopup(QuickPopup, QuickPanel);
@@ -2473,6 +2658,7 @@ public partial class BarWindow : AppBarWindow
         return popup == GroupPanel ? (PanelCard, GroupsButton)
             : popup == TrayPopup ? (TrayCard, TrayOverflowButton)
             : popup == ToolsPopup ? (ToolsCard, ToolsButton)
+            : popup == CalendarPopup ? (CalendarCard, Clock)
             : popup == QuickPopup ? (QuickPanel, QuickButton)
             : (StartPanel, StartButton);
     }
@@ -2727,6 +2913,35 @@ public partial class BarWindow : AppBarWindow
 
     #region Volume chip
     /// <summary>Ses tuşuna basıldı. Hızlı ayarlar açıksa orada kendi kaydırıcısı oynuyor, kart üstüne çıkmaz.</summary>
+    /// <summary>Ses simgelerinin üzerinde tekerlek: ses tuşlarıyla aynı adım, gösterge de aynı.</summary>
+    private void QuickButton_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        int notches = WheelNotches(e);
+        if (notches == 0 || AudioEndpoint.TryOpen() is not { } audio)
+        {
+            return;
+        }
+
+        try
+        {
+            bool changed = false;
+            for (int i = 0; i < Math.Abs(notches); i++)
+            {
+                changed |= audio.Press(notches > 0 ? VolumeKey.Up : VolumeKey.Down);
+            }
+
+            if (_settings.ShowVolumeChip)
+            {
+                ShowVolume(audio, changed);
+            }
+        }
+        catch (COMException)
+        {
+            // Aygıt tam bu sırada çıkarılmış olabilir.
+        }
+    }
+
     internal void ShowVolume(AudioEndpoint audio, bool changed)
     {
         if (HoldsBar(QuickPopup))
@@ -2821,7 +3036,7 @@ public partial class BarWindow : AppBarWindow
 
     private bool IsAnyPanelActive()
     {
-        return GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || PreviewPopup.IsOpen || _geniesPlaying > 0;
+        return GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || PreviewPopup.IsOpen || _geniesPlaying > 0;
     }
 
     /// <summary>
@@ -2830,7 +3045,8 @@ public partial class BarWindow : AppBarWindow
     /// </summary>
     private async void PanelButton_MouseEnter(object sender, MouseEventArgs e)
     {
-        Popup popup = sender == StartButton ? StartPopup : sender == GroupsButton ? GroupPanel : sender == ToolsButton ? ToolsPopup : sender == TrayOverflowButton ? TrayPopup : QuickPopup;
+        Popup popup = sender == StartButton ? StartPopup : sender == GroupsButton ? GroupPanel : sender == ToolsButton ? ToolsPopup : sender == TrayOverflowButton ? TrayPopup
+            : sender == Clock ? CalendarPopup : QuickPopup;
         // Şarkı kartı açıkken alınan cam onu da içerir; kart açılırken yeniden alınır.
         if (_preparing || ChipPopup.IsOpen || !SystemParameters.ClientAreaAnimation || !_prep.TryGetValue(popup, out PopupPrep? prep)
             || Environment.TickCount64 - prep.TakenAt < PrepareIntervalMs || (popup == StartPopup && !_settings.CustomStartMenu))
@@ -2908,6 +3124,10 @@ public partial class BarWindow : AppBarWindow
         await Task.Delay(WarmDelayMs);
 
         var popups = new List<Popup> { GroupPanel, ToolsPopup };
+        if (_settings.ShowClock)
+        {
+            popups.Add(CalendarPopup);
+        }
         if (Screen.Primary)
         {
             popups.Add(TrayPopup);
@@ -2975,6 +3195,7 @@ public partial class BarWindow : AppBarWindow
         ClosePopup(GroupPanel);
         ClosePopup(TrayPopup);
         ClosePopup(ToolsPopup);
+        ClosePopup(CalendarPopup);
         ClosePopup(QuickPopup);
         ClosePopup(StartPopup);
         HidePreview();
@@ -3003,7 +3224,7 @@ public partial class BarWindow : AppBarWindow
             EndTaskDrag(commit: false);
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen))
+        else if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || CalendarPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen))
         {
             ClosePanel();
             e.Handled = true;
@@ -3029,9 +3250,16 @@ public partial class BarWindow : AppBarWindow
 
     private void OpenAllButton_Click(object sender, RoutedEventArgs e)
     {
-        List<GroupItem> items = GroupOf(sender).Items.ToList();
+        AppGroup group = GroupOf(sender);
+        List<GroupItem> items = group.Items.ToList();
 
         ClosePanel();
+
+        if (group.HasLayout)
+        {
+            _ = OpenLayoutAsync(items);
+            return;
+        }
 
         // Açık olanı ikinci kez açma; önce onları getir ki yeni açılanlar üstte kalsın.
         foreach (GroupItem item in items.Where(item => item.IsRunning))
@@ -3039,6 +3267,151 @@ public partial class BarWindow : AppBarWindow
             item.NextWindow()?.BringToFront();
         }
         ReportFailures(items.Where(item => !item.IsRunning && !Launcher.Launch(item)).ToList());
+    }
+
+    /// <summary>Çalışma düzeni: açık olanlar yerine konup öne gelir, kapalılar açılır ve penceresi gelince yerine konur.</summary>
+    private async Task OpenLayoutAsync(List<GroupItem> items)
+    {
+        var failures = new List<GroupItem>();
+        var placing = new List<Task>();
+        foreach (GroupItem item in items)
+        {
+            if (ShownWindow(item) is { } window)
+            {
+                item.Spot?.Apply(window);
+                window.BringToFront();
+            }
+            else if (!Launcher.Launch(item))
+            {
+                failures.Add(item);
+            }
+            else if (item.Spot is { } spot)
+            {
+                placing.Add(PlaceWhenOpenedAsync(item, spot));
+            }
+        }
+
+        ReportFailures(failures);
+        await Task.WhenAll(placing);
+    }
+
+    private async Task PlaceWhenOpenedAsync(GroupItem item, WindowSpot spot)
+    {
+        long until = Environment.TickCount64 + LayoutWaitMs;
+        ApplicationWindow? window;
+        while ((window = ShownWindow(item)) == null && Environment.TickCount64 < until)
+        {
+            await Task.Delay(LayoutPollMs);
+        }
+
+        if (window == null)
+        {
+            return;
+        }
+
+        // Uygulamalar açılırken kendi son yerlerine de geçiyor; yerleşince bir kez daha.
+        spot.Apply(window);
+        await Task.Delay(LayoutSettleMs);
+        if (ShownWindow(item) == window)
+        {
+            spot.Apply(window);
+        }
+    }
+
+    /// <summary>
+    /// Öğenin ekrandaki penceresi. Dosya ve klasör hiçbir uygulamayla eşleşmez: onu gösteren pencere, başlığındaki
+    /// addan ya da Gezgin'in klasöründen bulunur.
+    /// </summary>
+    private ApplicationWindow? ShownWindow(GroupItem item)
+    {
+        return item.IsDocument
+            ? _allWindows.OfType<ApplicationWindow>().FirstOrDefault(window => WindowDocument.Shows(window, item.Path))
+            : item.LayoutWindow;
+    }
+
+    private void NewLayout_Click(object sender, RoutedEventArgs e)
+    {
+        ClosePanel();
+        StartLayoutEditor(target: null);
+    }
+
+    /// <summary>Kayıtlı düzen yerinde açılır, kaydedilince grubun öğeleri yenisiyle değişir.</summary>
+    private void EditLayoutItem_Click(object sender, RoutedEventArgs e)
+    {
+        AppGroup group = GroupOf(sender);
+        ClosePanel();
+        _ = OpenLayoutAsync(group.Items.ToList());
+        StartLayoutEditor(group);
+    }
+
+    private void StartLayoutEditor(AppGroup? target)
+    {
+        LayoutEditor.Start(this, bannerAtBottom: AppBarEdge == AppBarEdge.Top, LayoutCount, () => SaveLayout(target));
+    }
+
+    /// <summary>Ekranda görünen pencereler (küçültülmüş ve başka masaüstündekiler değil), en üstteki önce.</summary>
+    private List<ApplicationWindow> LayoutWindows()
+    {
+        List<IntPtr> order = DesktopWindows.ZOrder();
+        int Depth(ApplicationWindow window) => order.IndexOf(window.Handle) is var index and >= 0 ? index : int.MaxValue;
+
+        return _allWindows.OfType<ApplicationWindow>()
+            .Where(window => DesktopWindows.IsShown(window.Handle))
+            .OrderBy(Depth)
+            .ToList();
+    }
+
+    /// <summary>Düzenleme kartındaki sayı, diske bakmadan: belge ve klasör pencereleri ayrı, öteki uygulamalar birer kez.</summary>
+    private int LayoutCount()
+    {
+        return LayoutWindows().Select(window => TaskGroup.KeyOf(window) + "|" + WindowDocument.Key(window)).Distinct().Count();
+    }
+
+    /// <summary>
+    /// Ekrandaki uygulamaları ve yerlerini gruba yazar; yeni düzende yeni grup açılır. Grubun adını döner. Dosya ya da
+    /// klasör gösteren pencerede o kaydedilir, uygulamada en üstteki penceresi. Alttan üste sıralı: "Hepsini aç" sırayla
+    /// öne getirdiği için üst üste binenler yine aynı sırada durur.
+    /// </summary>
+    private string? SaveLayout(AppGroup? target)
+    {
+        var items = new List<GroupItem>();
+        foreach (ApplicationWindow window in LayoutWindows())
+        {
+            GroupItem? item = WindowDocument.Find(window) is { } document ? GroupItem.FromPath(document) : PinItemFor(window);
+            if (item != null && WindowSpot.Capture(window) is { } spot && !items.Any(other => SamePath(other, item)))
+            {
+                item.Spot = spot;
+                items.Add(item);
+            }
+        }
+        items.Reverse();
+
+        if (items.Count == 0)
+        {
+            return null;
+        }
+
+        AppGroup group = target != null && _settings.Groups.Contains(target) ? target : new AppGroup { Name = NextLayoutName() };
+        group.Items = new ObservableCollection<GroupItem>(items);
+        if (!_settings.Groups.Contains(group))
+        {
+            _settings.Groups.Add(group);
+        }
+        _settings.Save();
+        _runTracker?.Refresh();
+        return group.Name;
+    }
+
+    private string NextLayoutName()
+    {
+        for (int number = 1; ; number++)
+        {
+            string name = $"Düzen {number}";
+            if (_settings.Groups.All(group => group.Name != name))
+            {
+                return name;
+            }
+        }
     }
 
     private void NewInstanceItem_Click(object sender, RoutedEventArgs e)

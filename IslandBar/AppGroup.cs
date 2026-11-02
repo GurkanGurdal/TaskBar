@@ -57,6 +57,8 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
             }
             OnPropertyChanged(nameof(Items));
             OnPropertyChanged(nameof(PreviewItems));
+            OnPropertyChanged(nameof(HasLayout));
+            OnPropertyChanged(nameof(Summary));
         }
     }
 
@@ -74,9 +76,14 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
         {
             int running = _items?.Count(item => item.IsRunning) ?? 0;
             int count = _items?.Count ?? 0;
-            return running > 0 ? $"{count} öğe · {running} açık" : $"{count} öğe";
+            string summary = running > 0 ? $"{count} öğe · {running} açık" : $"{count} öğe";
+            return HasLayout ? summary + " · düzen kayıtlı" : summary;
         }
     }
+
+    /// <summary>"Hepsini aç" pencereleri kaydedilen yerlerine de koyar.</summary>
+    [JsonIgnore]
+    public bool HasLayout => _items?.Any(item => item.Spot != null) == true;
 
     public void NotifyRunStateChanged()
     {
@@ -155,6 +162,28 @@ public sealed class GroupItem : INotifyPropertyChanged
 
     [JsonIgnore]
     public bool IsRunning => _windows.Count > 0;
+
+    /// <summary>Grubun çalışma düzenindeki yeri; yalnızca gruplardaki öğelerde.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WindowSpot? Spot { get; set; }
+
+    /// <summary>Dosya ya da klasör: hiçbir pencereyle eşleşmez, onu gösteren pencere ayrıca bulunur.</summary>
+    [JsonIgnore]
+    public bool IsDocument
+    {
+        get
+        {
+            string extension = System.IO.Path.GetExtension(Path);
+            return !Path.StartsWith(StoreAppPrefix, StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".url", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>Düzende yeri tutulan pencere: birden çok pencerede küçültülmemiş olan ilki.</summary>
+    [JsonIgnore]
+    public ApplicationWindow? LayoutWindow => _windows.FirstOrDefault(window => !window.IsMinimized) ?? _windows.FirstOrDefault();
 
     [JsonIgnore]
     public bool IsActive => _windows.Any(window => window.State == ApplicationWindow.WindowState.Active);

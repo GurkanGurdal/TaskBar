@@ -146,6 +146,7 @@ public partial class App : Application
         if (e.PropertyName == nameof(AppSettings.HideWindowsTaskbar))
         {
             ApplyTaskbarMode(_settings!.HideWindowsTaskbar);
+            ApplyWinKeyMode();
         }
         else if (e.PropertyName == nameof(AppSettings.KeepScreenshots))
         {
@@ -184,14 +185,36 @@ public partial class App : Application
 
     private void ApplyStartMenuMode()
     {
+        ApplyWinKeyMode();
+        if (_settings!.CustomStartMenu)
+        {
+            PrepareStartPanels();
+        }
+    }
+
+    /// <summary>
+    /// Windows tuşu kendi menümüzü açar; Windows çubuğu gizliyken Win+rakam da bizim çubuğun düğmelerine gider.
+    /// Tamamlayıcı modda rakamlar görünür Windows çubuğunun.
+    /// </summary>
+    private void ApplyWinKeyMode()
+    {
         _winKeyWatcher?.Dispose();
         _winKeyWatcher = null;
 
-        if (_settings!.CustomStartMenu)
+        bool start = _settings!.CustomStartMenu;
+        bool numbers = _settings.HideWindowsTaskbar;
+        if (start || numbers)
         {
-            _winKeyWatcher = new WinKeyWatcher(() => Dispatcher.BeginInvoke(ToggleStartPanel));
-            PrepareStartPanels();
+            _winKeyWatcher = new WinKeyWatcher(
+                start ? () => Dispatcher.BeginInvoke(ToggleStartPanel) : null,
+                numbers ? (index, newInstance) => Dispatcher.BeginInvoke(() => PressTaskAt(index, newInstance)) : null);
         }
+    }
+
+    /// <summary>Sıra ana ekrandaki çubuğun düğmeleri: sabitlenenler her çubukta aynı, Windows da ana çubuğu sayar.</summary>
+    private void PressTaskAt(int index, bool newInstance)
+    {
+        _bars.FirstOrDefault(bar => bar.Screen.Primary)?.PressTaskAt(index, newInstance);
     }
 
     private void ApplyVolumeChipMode()

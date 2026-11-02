@@ -15,12 +15,7 @@ internal static class DesktopWindows
     /// </summary>
     public static bool Covers(IntPtr window, Rectangle area)
     {
-        if (!IsWindowVisible(window) || IsIconic(window))
-        {
-            return false;
-        }
-
-        if (DwmGetWindowAttribute(window, DwmCloaked, out int cloaked, sizeof(int)) == 0 && cloaked != 0)
+        if (!IsShown(window))
         {
             return false;
         }
@@ -32,6 +27,34 @@ internal static class DesktopWindows
 
         return Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom).IntersectsWith(area);
     }
+
+    /// <summary>Ekranda görünüyor mu: küçültülmüş ve cloak'lu pencereler görünmez.</summary>
+    public static bool IsShown(IntPtr window)
+    {
+        if (!IsWindowVisible(window) || IsIconic(window))
+        {
+            return false;
+        }
+
+        return DwmGetWindowAttribute(window, DwmCloaked, out int cloaked, sizeof(int)) != 0 || cloaked == 0;
+    }
+
+    /// <summary>Üst seviye pencerelerin sırası, en üstteki önce.</summary>
+    public static List<IntPtr> ZOrder()
+    {
+        var windows = new List<IntPtr>();
+        EnumWindows((window, _) =>
+        {
+            windows.Add(window);
+            return true;
+        }, IntPtr.Zero);
+        return windows;
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32")]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Bounds

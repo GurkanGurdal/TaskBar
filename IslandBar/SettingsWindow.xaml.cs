@@ -35,7 +35,8 @@ public partial class SettingsWindow : Window
         ThemeBox.ItemsSource = new Dictionary<string, BarTheme>
         {
             ["Cam"] = BarTheme.Glass,
-            ["Beyaz"] = BarTheme.White
+            ["Beyaz"] = BarTheme.White,
+            ["Grafit"] = BarTheme.Graphite
         };
 
         DataContext = settings;

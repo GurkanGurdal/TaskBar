@@ -8,6 +8,8 @@ namespace IslandBar;
 /// göndermek yeter. Bu yüzden Win+E gibi kısayollar olduğu gibi çalışır. Süreç ölünce kanca da kalkar,
 /// Windows tuşu kendiliğinden eski işine döner.
 /// Yönetici olarak çalışan pencere öndeyken Windows bu tuşları göstermez; o sırada Windows'un menüsü açılır.
+/// Win+1…9, 0 da buradan: Windows bunları gizli çubuğunun kendi sabitlemelerine gönderirdi. Rakam yutulur; Windows
+/// arada tuş görmediği için bırakılırken yine etkisiz tuş gönderilir, yoksa kendi menüsünü açar.
 /// </summary>
 internal sealed class WinKeyWatcher : IDisposable
 {
@@ -16,6 +18,8 @@ internal sealed class WinKeyWatcher : IDisposable
     private const int VkShift = 0x10;
     private const int VkControl = 0x11;
     private const int VkAlt = 0x12;
+    private const int VkZero = 0x30;
+    private const int VkNine = 0x39;
 
     /// <summary>Atanmamış tuş kodu; Windows 10 1909'dan beri vk07 oyun çubuğunu açıyor, onu kullanma.</summary>
     private const ushort VkMask = 0xE8;
@@ -24,15 +28,21 @@ internal sealed class WinKeyWatcher : IDisposable
 
     private static long _nativeStartUntil;
 
-    private readonly Action _pressed;
+    private readonly Action? _pressed;
+    private readonly Action<int, bool>? _number;
     private readonly KeyboardHook _hook;
+    private readonly HashSet<int> _swallowedDigits = new();
     private bool _winDown;
     private bool _combination;
+    private bool _numbered;
 
-    /// <param name="pressed">Kancanın iş parçacığında çağrılır; hemen dönmeli.</param>
-    public WinKeyWatcher(Action pressed)
+    /// <param name="pressed">Windows tuşu tek başına; null ise Windows'un menüsüne karışılmaz.</param>
+    /// <param name="number">Win+rakam: sıra (1 için 0, 0 için 9) ve Shift basılı mı; null ise rakamlar Windows'a gider.</param>
+    /// <remarks>İkisi de kancanın iş parçacığında çağrılır; hemen dönmeli.</remarks>
+    public WinKeyWatcher(Action? pressed, Action<int, bool>? number)
     {
         _pressed = pressed;
+        _number = number;
         _hook = new KeyboardHook(nameof(WinKeyWatcher), OnKey);
     }
 
@@ -57,17 +67,37 @@ internal sealed class WinKeyWatcher : IDisposable
                 {
                     _winDown = true;
                     _combination = false;
+                    _numbered = false;
                 }
             }
             else if (_winDown)
             {
                 _winDown = false;
-                if (!_combination && !IsModifierDown() && Environment.TickCount64 >= Interlocked.Read(ref _nativeStartUntil))
+                if (_numbered)
+                {
+                    SendMaskKey();
+                }
+                else if (_pressed != null && !_combination && !IsModifierDown() && Environment.TickCount64 >= Interlocked.Read(ref _nativeStartUntil))
                 {
                     SendMaskKey();
                     _pressed();
                 }
             }
+        }
+        else if (key is >= VkZero and <= VkNine && (down ? _winDown && _number != null && !IsDown(VkAlt) : _swallowedDigits.Contains(key)))
+        {
+            // Basılı tutulan rakamın tekrarları sayılmaz; bırakılışı da yutulur, Win önce bırakılmış olsa bile.
+            if (!down)
+            {
+                _swallowedDigits.Remove(key);
+            }
+            else if (_swallowedDigits.Add(key))
+            {
+                _combination = true;
+                _numbered = true;
+                _number!(key == VkZero ? 9 : key - VkZero - 1, IsDown(VkShift));
+            }
+            return true;
         }
         else if (down && _winDown && key != VkMask)
         {
@@ -79,7 +109,12 @@ internal sealed class WinKeyWatcher : IDisposable
 
     private static bool IsModifierDown()
     {
-        return GetAsyncKeyState(VkShift) < 0 || GetAsyncKeyState(VkControl) < 0 || GetAsyncKeyState(VkAlt) < 0;
+        return IsDown(VkShift) || IsDown(VkControl) || IsDown(VkAlt);
+    }
+
+    private static bool IsDown(int key)
+    {
+        return GetAsyncKeyState(key) < 0;
     }
 
     private static void SendMaskKey()
