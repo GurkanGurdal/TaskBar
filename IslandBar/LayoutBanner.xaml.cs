@@ -53,7 +53,7 @@ public partial class LayoutBanner : Window
     {
         Buttons.Visibility = Visibility.Collapsed;
         Heading.Text = "Düzen kaydedildi";
-        Detail.Text = $"{name} · Gruplar'da, Hepsini aç ile geri gelir";
+        Detail.Text = $"{name} · Düzenler'de, tıklayınca aynı haliyle açılır";
     }
 
     public void Appear()

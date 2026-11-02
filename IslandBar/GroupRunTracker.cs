@@ -40,9 +40,7 @@ internal sealed class GroupRunTracker : IDisposable
             {
                 item.SetWindows(windows.Where(item.Matches).ToList());
             }
-            group.NotifyRunStateChanged();
         }
-        _settings.NotifyRunStateChanged();
     }
 
     public void Dispose()

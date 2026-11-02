@@ -56,44 +56,31 @@ public sealed class AppGroup : INotifyPropertyChanged, IDisposable
                 _items.CollectionChanged += Items_CollectionChanged;
             }
             OnPropertyChanged(nameof(Items));
-            OnPropertyChanged(nameof(PreviewItems));
             OnPropertyChanged(nameof(HasLayout));
-            OnPropertyChanged(nameof(Summary));
+            OnPropertyChanged(nameof(Contents));
+            OnPropertyChanged(nameof(WindowSummary));
         }
     }
-
-    /// <summary>Grup düğmesindeki küçük ızgara için ilk dört öğe.</summary>
-    [JsonIgnore]
-    public IEnumerable<GroupItem> PreviewItems => _items?.Take(4).ToList() ?? [];
 
     [JsonIgnore]
     public ShellItem? Icon => IconPath == null ? null : _icon ??= new ShellItem(IconPath);
 
+    /// <summary>Kartın alt satırı.</summary>
     [JsonIgnore]
-    public string Summary
-    {
-        get
-        {
-            int running = _items?.Count(item => item.IsRunning) ?? 0;
-            int count = _items?.Count ?? 0;
-            string summary = running > 0 ? $"{count} öğe · {running} açık" : $"{count} öğe";
-            return HasLayout ? summary + " · düzen kayıtlı" : summary;
-        }
-    }
+    public string WindowSummary => $"{_items?.Count ?? 0} pencere";
 
-    /// <summary>"Hepsini aç" pencereleri kaydedilen yerlerine de koyar.</summary>
+    /// <summary>Kartın ipucu: içindeki uygulamalar ve dosyalar.</summary>
+    [JsonIgnore]
+    public string Contents => _items is { Count: > 0 } ? string.Join(", ", _items.Select(item => item.Name)) : "Boş düzen";
+
+    /// <summary>Açılınca pencereler kaydedilen yerlerine de konur.</summary>
     [JsonIgnore]
     public bool HasLayout => _items?.Any(item => item.Spot != null) == true;
 
-    public void NotifyRunStateChanged()
-    {
-        OnPropertyChanged(nameof(Summary));
-    }
-
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        OnPropertyChanged(nameof(PreviewItems));
-        NotifyRunStateChanged();
+        OnPropertyChanged(nameof(Contents));
+        OnPropertyChanged(nameof(WindowSummary));
     }
 
     public void Dispose()

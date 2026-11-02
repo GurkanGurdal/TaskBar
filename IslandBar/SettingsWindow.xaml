@@ -122,10 +122,10 @@
                     <Button x:Name="PinnedRemoveButton" Style="{StaticResource SideButton}" Content="Kaldır" Click="PinnedRemoveButton_Click" />
                 </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Gruplar" FontWeight="SemiBold" Margin="0,12,0,4" />
+                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="Düzenler" FontWeight="SemiBold" Margin="0,12,0,4" />
                 <ListBox x:Name="GroupList"
                          Grid.Row="3"
-                         AutomationProperties.Name="Gruplar"
+                         AutomationProperties.Name="Düzenler"
                          ItemsSource="{Binding Groups}"
                          DisplayMemberPath="Name"
                          SelectionChanged="List_SelectionChanged" />

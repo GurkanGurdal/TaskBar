@@ -137,12 +137,6 @@ public partial class App : Application
 
     private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Ayar değil, pencere durumu; her pencere değişiminde dosya yazılmasın.
-        if (e.PropertyName == nameof(AppSettings.RunningGroupItems))
-        {
-            return;
-        }
-
         if (e.PropertyName == nameof(AppSettings.HideWindowsTaskbar))
         {
             ApplyTaskbarMode(_settings!.HideWindowsTaskbar);

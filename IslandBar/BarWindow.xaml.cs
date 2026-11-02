@@ -156,7 +156,6 @@ public partial class BarWindow : AppBarWindow
     private readonly ListCollectionView? _trayBattery;
     private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
-    private AppGroup? _addTargetGroup;
     private readonly DispatcherTimer _dragOpenTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private GlassCard? _dragOpenCard;
     private bool _startMenuWasOpen;
@@ -190,7 +189,6 @@ public partial class BarWindow : AppBarWindow
 
     private readonly IDisposable? _volumeWatcher;
     private readonly GroupRunTracker? _runTracker;
-    private Point? _tileDragStart;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
     private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -1577,12 +1575,6 @@ public partial class BarWindow : AppBarWindow
 
     private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Pencere durumu ayar değil; her pencere değişiminde çalışır.
-        if (e.PropertyName == nameof(AppSettings.RunningGroupItems))
-        {
-            return;
-        }
-
         // Menü ve ayarlar penceresi yalnızca ayarı değiştirir; her çubuk kendine uygular, kaydetmek App'te.
         if (e.PropertyName is nameof(AppSettings.Edge) or nameof(AppSettings.Thickness))
         {
@@ -1689,24 +1681,6 @@ public partial class BarWindow : AppBarWindow
     #endregion
 
     #region Groups
-    private void NewGroupItem_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new NameDialog("") { Owner = this };
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        _settings.Groups.Add(new AppGroup { Name = dialog.GroupName });
-        _settings.Save();
-    }
-
-    private void PanelNewGroup_Click(object sender, RoutedEventArgs e)
-    {
-        NewGroupItem_Click(sender, e);
-        ShowGroupsPanel();
-    }
-
     private void RenameGroupItem_Click(object sender, RoutedEventArgs e)
     {
         RenameGroup(GroupOf(sender), this);
@@ -1725,29 +1699,6 @@ public partial class BarWindow : AppBarWindow
         _settings.Save();
     }
 
-    private void ChooseIconItem_Click(object sender, RoutedEventArgs e)
-    {
-        AppGroup group = GroupOf(sender);
-
-        var dialog = new OpenFileDialog
-        {
-            DereferenceLinks = false,
-            Filter = "İkonlar ve programlar|*.ico;*.exe;*.lnk;*.dll;*.png|Tüm dosyalar|*.*"
-        };
-        if (dialog.ShowDialog(this) == true)
-        {
-            group.IconPath = dialog.FileName;
-            _settings.Save();
-        }
-        ShowGroupsPanel();
-    }
-
-    private void ResetIconItem_Click(object sender, RoutedEventArgs e)
-    {
-        GroupOf(sender).IconPath = null;
-        _settings.Save();
-    }
-
     private void DeleteGroupItem_Click(object sender, RoutedEventArgs e)
     {
         DeleteGroup(GroupOf(sender), this);
@@ -1757,8 +1708,8 @@ public partial class BarWindow : AppBarWindow
     internal void DeleteGroup(AppGroup group, Window owner)
     {
         if (group.Items.Count > 0 && MessageBox.Show(owner,
-                $"\"{group.Name}\" grubu ve içindeki {group.Items.Count} öğe silinsin mi? Programların kendisi silinmez.",
-                "Grubu sil", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                $"\"{group.Name}\" düzeni silinsin mi? Uygulamalara ve dosyalara dokunulmaz.",
+                "Düzeni sil", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
         {
             return;
         }
@@ -3231,24 +3182,8 @@ public partial class BarWindow : AppBarWindow
         }
     }
 
-    private void ItemButton_Click(object sender, RoutedEventArgs e)
-    {
-        GroupItem item = ItemOf(sender);
-        bool newInstance = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-
-        ClosePanel();
-
-        // Dock'lardaki gibi: açıksa ona geç, Ctrl ile yeni kopya.
-        if (!newInstance && item.NextWindow() is { } window)
-        {
-            window.BringToFront();
-            return;
-        }
-
-        ReportFailures(Launcher.Launch(item) ? [] : [item]);
-    }
-
-    private void OpenAllButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>Düzen klasörüne tıklamak onu açar: kayıtlı yerler varsa pencereler oraya konur.</summary>
+    private void LayoutFolder_Click(object sender, RoutedEventArgs e)
     {
         AppGroup group = GroupOf(sender);
         List<GroupItem> items = group.Items.ToList();
@@ -3414,136 +3349,6 @@ public partial class BarWindow : AppBarWindow
         }
     }
 
-    private void NewInstanceItem_Click(object sender, RoutedEventArgs e)
-    {
-        GroupItem item = ItemOf(sender);
-
-        ClosePanel();
-        ReportFailures(Launcher.Launch(item) ? [] : [item]);
-    }
-
-    private void OpenLocationItem_Click(object sender, RoutedEventArgs e)
-    {
-        GroupItem item = ItemOf(sender);
-
-        ClosePanel();
-        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.LocationPath}\"") { UseShellExecute = true });
-    }
-
-    private static GroupItem ItemOf(object sender)
-    {
-        return (GroupItem)((FrameworkElement)sender).DataContext;
-    }
-
-    private void ItemButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _tileDragStart = e.GetPosition(null);
-    }
-
-    private void ItemButton_PreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed || _tileDragStart == null)
-        {
-            return;
-        }
-
-        Vector moved = e.GetPosition(null) - _tileDragStart.Value;
-        if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance
-            && Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance)
-        {
-            return;
-        }
-
-        _tileDragStart = null;
-        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(typeof(GroupItem), ItemOf(sender)), DragDropEffects.Move);
-        _settings.Save();
-    }
-
-    private void ItemButton_DragOver(object sender, DragEventArgs e)
-    {
-        if (e.Data.GetData(typeof(GroupItem)) is not GroupItem dragged)
-        {
-            return;
-        }
-
-        // Sürüklerken yer değiştirir; bırakınca yerleşmiş olur. Başka grubun kutusuna gelince o gruba geçer.
-        GroupItem over = ItemOf(sender);
-        AppGroup? source = OwnerOf(dragged);
-        AppGroup? target = OwnerOf(over);
-        if (source != null && target != null && dragged != over)
-        {
-            int to = target.Items.IndexOf(over);
-            if (source == target)
-            {
-                source.Items.Move(source.Items.IndexOf(dragged), to);
-            }
-            else if (!HasPath(target, dragged))
-            {
-                source.Items.Remove(dragged);
-                target.Items.Insert(to, dragged);
-            }
-        }
-
-        e.Effects = DragDropEffects.Move;
-        e.Handled = true;
-    }
-
-    private AppGroup? OwnerOf(GroupItem item)
-    {
-        return _settings.Groups.FirstOrDefault(group => group.Items.Contains(item));
-    }
-
-    private static bool HasPath(AppGroup group, GroupItem item)
-    {
-        return group.Items.Any(existing => string.Equals(existing.Path, item.Path, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private void ItemButton_Drop(object sender, DragEventArgs e)
-    {
-        if (e.Data.GetDataPresent(typeof(GroupItem)))
-        {
-            e.Handled = true;
-        }
-    }
-
-    private void GroupSection_DragOver(object sender, DragEventArgs e)
-    {
-        AppGroup group = GroupOf(sender);
-
-        if (e.Data.GetData(typeof(GroupItem)) is GroupItem dragged)
-        {
-            // Kutuların dışına, başka grubun boş yerine gelince o grubun sonuna geçer.
-            if (OwnerOf(dragged) is { } source && source != group && !HasPath(group, dragged))
-            {
-                source.Items.Remove(dragged);
-                group.Items.Add(dragged);
-            }
-            e.Effects = DragDropEffects.Move;
-            e.Handled = true;
-        }
-        else if (SetDropEffect(e))
-        {
-            ((Border)sender).Background = (Brush)FindResource("DropHighlight");
-        }
-    }
-
-    private void GroupSection_DragLeave(object sender, DragEventArgs e)
-    {
-        ((Border)sender).Background = Brushes.Transparent;
-    }
-
-    private void GroupSection_Drop(object sender, DragEventArgs e)
-    {
-        var section = (Border)sender;
-        section.Background = Brushes.Transparent;
-
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
-        {
-            AddItems(GroupOf(section).Items, paths.Select(GroupItem.FromPath));
-        }
-        e.Handled = true;
-    }
-
     private void ReportFailures(IReadOnlyCollection<GroupItem> failed)
     {
         if (failed.Count > 0)
@@ -3553,41 +3358,9 @@ public partial class BarWindow : AppBarWindow
         }
     }
 
-    private void RemoveItem_Click(object sender, RoutedEventArgs e)
-    {
-        GroupItem item = ItemOf(sender);
-
-        OwnerOf(item)?.Items.Remove(item);
-        _settings.Save();
-    }
     #endregion
 
     #region Adding items
-    private void AddButton_Click(object sender, RoutedEventArgs e)
-    {
-        var button = (Button)sender;
-
-        _addTargetGroup = GroupOf(button);
-        button.ContextMenu.PlacementTarget = button;
-        button.ContextMenu.Placement = PlacementMode.Bottom;
-        button.ContextMenu.IsOpen = true;
-    }
-
-    private void AddFilesItem_Click(object sender, RoutedEventArgs e)
-    {
-        AddToPanelGroup(PickFiles());
-    }
-
-    private void AddFolderItem_Click(object sender, RoutedEventArgs e)
-    {
-        AddToPanelGroup(PickFolders());
-    }
-
-    private void AddStoreAppItem_Click(object sender, RoutedEventArgs e)
-    {
-        AddToPanelGroup(PickStoreApps());
-    }
-
     private List<GroupItem> PickFiles()
     {
         var dialog = new OpenFileDialog
@@ -3615,17 +3388,6 @@ public partial class BarWindow : AppBarWindow
             : [];
     }
 
-    private void AddToPanelGroup(IEnumerable<GroupItem> items)
-    {
-        if (_addTargetGroup != null)
-        {
-            AddItems(_addTargetGroup.Items, items);
-        }
-
-        // Diyalog açılınca pencere etkinliğini kaybedip paneli kapatmıştı.
-        ShowGroupsPanel();
-    }
-
     private void AddItems(ICollection<GroupItem> target, IEnumerable<GroupItem> items)
     {
         foreach (GroupItem item in items)
@@ -3640,22 +3402,6 @@ public partial class BarWindow : AppBarWindow
 
         _settings.Save();
         _runTracker?.Refresh();
-    }
-
-    private void GroupsButton_DragEnter(object sender, DragEventArgs e)
-    {
-        // Sürüklenen dosya hangi gruba gideceğini görebilsin. Sürükleme bitene dek pencere etkinleşemez;
-        // bırakılınca DragOpenTimer_Tick toparlar.
-        if (SetDropEffect(e) && !GroupPanel.IsOpen)
-        {
-            ClosePanel();
-            _runTracker?.Refresh();
-            GroupPanel.PlacementTarget = GroupsButton;
-            PlacePopup(GroupPanel, PanelCard);
-            GroupPanel.IsOpen = true;
-            _dragOpenCard = PanelCard;
-            _dragOpenTimer.Start();
-        }
     }
 
     private void ToolsButton_DragEnter(object sender, DragEventArgs e)
@@ -3681,19 +3427,9 @@ public partial class BarWindow : AppBarWindow
         e.Handled = true;
     }
 
-    private void GroupsButton_DragOver(object sender, DragEventArgs e)
+    private void ToolsButton_DragOver(object sender, DragEventArgs e)
     {
         SetDropEffect(e);
-    }
-
-    private void GroupsButton_Drop(object sender, DragEventArgs e)
-    {
-        // Tek grup varsa nereye gideceği belli; yoksa panel açık, kullanıcı bölüme bırakır.
-        if (_settings.Groups.Count == 1 && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
-        {
-            AddItems(_settings.Groups[0].Items, paths.Select(GroupItem.FromPath));
-        }
-        e.Handled = true;
     }
 
     private void DragOpenTimer_Tick(object? sender, EventArgs e)

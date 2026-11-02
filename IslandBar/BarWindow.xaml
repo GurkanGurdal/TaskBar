@@ -1,4 +1,4 @@
-﻿<appbar:AppBarWindow x:Class="IslandBar.BarWindow"
+<appbar:AppBarWindow x:Class="IslandBar.BarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:appbar="clr-namespace:ManagedShell.AppBar;assembly=ManagedShell.AppBar"
@@ -196,45 +196,10 @@
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Width" Value="82" />
-            <Setter Property="Height" Value="86" />
+            <Setter Property="Width" Value="80" />
+            <Setter Property="Height" Value="88" />
             <Setter Property="Margin" Value="1" />
             <Setter Property="Template" Value="{StaticResource PanelTileTemplate}" />
-        </Style>
-
-        <!-- Açık uygulama işareti; etkin olan daha parlak -->
-        <Style x:Key="RunningMark" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource MarkFill}" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsActive}" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentFill}" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <!-- Grup düğmesinin kenardaki noktaları -->
-        <Style x:Key="ChipDots" TargetType="ItemsControl">
-            <Setter Property="IsHitTestVisible" Value="False" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="VerticalAlignment" Value="Bottom" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,0,0,1" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Top}">
-                    <Setter Property="VerticalAlignment" Value="Top" />
-                    <Setter Property="Margin" Value="0,1,0,0" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Left}">
-                    <Setter Property="VerticalAlignment" Value="Center" />
-                    <Setter Property="HorizontalAlignment" Value="Left" />
-                    <Setter Property="Margin" Value="1,0,0,0" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding AppBarEdge, RelativeSource={RelativeSource AncestorType=Window}}" Value="{x:Static appbar:AppBarEdge.Right}">
-                    <Setter Property="VerticalAlignment" Value="Center" />
-                    <Setter Property="HorizontalAlignment" Value="Right" />
-                    <Setter Property="Margin" Value="0,0,1,0" />
-                </DataTrigger>
-            </Style.Triggers>
         </Style>
 
         <Style x:Key="BarText" TargetType="TextBlock">
@@ -493,7 +458,7 @@
     </Window.Resources>
     <Window.ContextMenu>
         <ContextMenu>
-            <MenuItem Header="Yeni grup..." Click="NewGroupItem_Click" />
+            <MenuItem Header="Yeni düzen..." Click="NewLayout_Click" />
             <MenuItem Header="Uygulama sabitle">
                 <MenuItem Header="Program veya kısayol..." Click="PinFilesItem_Click" />
                 <MenuItem Header="Klasör..." Click="PinFolderItem_Click" />
@@ -602,13 +567,9 @@
                                 ClickMode="Press"
                                 MouseEnter="PanelButton_MouseEnter"
                                 Style="{StaticResource IconButton}"
-                                AllowDrop="True"
-                                AutomationProperties.Name="Gruplar"
-                                ToolTip="Gruplar"
-                                Click="GroupsButton_Click"
-                                DragEnter="GroupsButton_DragEnter"
-                                DragOver="GroupsButton_DragOver"
-                                Drop="GroupsButton_Drop">
+                                AutomationProperties.Name="Düzenler"
+                                ToolTip="Düzenler"
+                                Click="GroupsButton_Click">
                             <!-- Phosphor Icons, cards-three-fill (MIT): üst üste kartlar. Başlat'ın kareleriyle karışmasın diye ızgara değil. -->
                             <Path Data="M224,104v96a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V104A16,16,0,0,1,48,88H208A16,16,0,0,1,224,104ZM56,72H200a8,8,0,0,0,0-16H56a8,8,0,0,0,0,16ZM72,40H184a8,8,0,0,0,0-16H72a8,8,0,0,0,0,16Z"
                                   Fill="{StaticResource FolderGradient}"
@@ -616,15 +577,6 @@
                                   Width="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}"
                                   Height="{Binding IconSize, RelativeSource={RelativeSource AncestorType=Window}}" />
                         </Button>
-                        <ItemsControl Style="{StaticResource ChipDots}"
-                                      ItemsSource="{Binding RunningGroupItems}"
-                                      ItemsPanel="{StaticResource BarItemsPanel}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Style="{StaticResource RunningMark}" Width="3" Height="3" CornerRadius="1.5" Margin="1" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
                     </Grid>
 
                     <!-- Phosphor Icons, toolbox-fill (MIT). Renksiz: bir uygulama değil, çubuğun kendi işlevi. -->
@@ -635,7 +587,7 @@
                             ToolTip="IslandBar Araçları"
                             AllowDrop="True"
                             DragEnter="ToolsButton_DragEnter"
-                            DragOver="GroupsButton_DragOver"
+                            DragOver="ToolsButton_DragOver"
                             Drop="ToolsButton_Drop"
                             Click="ToolsButton_Click">
                         <Button.Style>
@@ -1095,8 +1047,8 @@
                Closed="Popup_OpenedOrClosed">
             <Border Padding="20">
             <local:GlassCard x:Name="PanelCard"
-                             Padding="12"
-                             Width="372"
+                             Padding="12,12,12,8"
+                             Width="352"
                              AllowDrop="False"
                              SizeChanged="PopupCard_SizeChanged"
                              CornerRadius="20">
@@ -1104,8 +1056,9 @@
                     <DockPanel Margin="6,2,2,8">
                         <Button DockPanel.Dock="Right"
                                 Style="{StaticResource PanelGhostButton}"
-                                AutomationProperties.Name="Yeni grup"
-                                Click="PanelNewGroup_Click">
+                                AutomationProperties.Name="Yeni düzen"
+                                ToolTip="Uygulamaları açıp dizdiğin hali düzen olarak kaydeder"
+                                Click="NewLayout_Click">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M5,0 L5,10 M0,5 L10,5"
                                       Stroke="{StaticResource TextPrimary}"
@@ -1114,37 +1067,20 @@
                                       StrokeEndLineCap="Round"
                                       VerticalAlignment="Center"
                                       Margin="0,0,6,0" />
-                                <TextBlock Text="Yeni grup" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
-                        <Button DockPanel.Dock="Right"
-                                Style="{StaticResource PanelGhostButton}"
-                                Margin="0,0,6,0"
-                                AutomationProperties.Name="Yeni düzen"
-                                ToolTip="Uygulamaları açıp dizdiğin hali grup olarak kaydeder"
-                                Click="NewLayout_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <!-- Yan yana iki pencere -->
-                                <Path Data="M1.5,0.75 H10.5 A0.75,0.75 0 0 1 11.25,1.5 V8.5 A0.75,0.75 0 0 1 10.5,9.25 H1.5 A0.75,0.75 0 0 1 0.75,8.5 V1.5 A0.75,0.75 0 0 1 1.5,0.75 Z M6,0.75 V9.25"
-                                      Stroke="{StaticResource TextPrimary}"
-                                      StrokeThickness="1.3"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,6,0" />
                                 <TextBlock Text="Yeni düzen" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
-                        <TextBlock Text="Gruplar"
+                        <TextBlock Text="Düzenler"
                                    Foreground="{StaticResource TextPrimary}"
                                    FontSize="15"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
                     </DockPanel>
-                    <TextBlock Text="Henüz grup yok. Benzer uygulamaları toplamak için yeni bir grup oluşturun."
-                               Foreground="{StaticResource TextPrimary}"
-                               Opacity="0.85"
+                    <TextBlock Text="Henüz düzen yok. Uygulamaları açıp dizdiğin hali düzen olarak kaydet; tek tıkla aynı haliyle geri gelir."
+                               Foreground="{StaticResource TextSecondary}"
                                FontSize="12"
                                TextWrapping="Wrap"
-                               Margin="6,4,6,10">
+                               Margin="6,0,6,10">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -1156,165 +1092,50 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <!-- Her grup bir bölüm: uygulamaya tek tıkla ulaşılır. Fazlası tekerlekle kayar. -->
-                    <ScrollViewer MaxHeight="560"
+                    <!-- Her düzen bir klasör; tıklayınca açılır. Üç sıradan fazlası tekerlekle kayar. -->
+                    <ScrollViewer MaxHeight="312"
                                   Focusable="False"
                                   VerticalScrollBarVisibility="Hidden"
                                   HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl x:Name="GroupSections" ItemsSource="{Binding Groups}" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="Transparent"
-                                            CornerRadius="12"
-                                            Padding="4,6"
-                                            AllowDrop="True"
-                                            DragOver="GroupSection_DragOver"
-                                            DragLeave="GroupSection_DragLeave"
-                                            Drop="GroupSection_Drop">
-                                        <StackPanel>
-                                            <DockPanel Background="Transparent" Margin="2,0,0,4">
-                                                <DockPanel.ContextMenu>
-                                                    <ContextMenu>
-                                                        <MenuItem Header="Yeniden adlandır..." Click="RenameGroupItem_Click" />
-                                                        <MenuItem Header="İkon seç..." Click="ChooseIconItem_Click" />
-                                                        <MenuItem Header="Varsayılan ikon" Click="ResetIconItem_Click" />
-                                                        <Separator />
-                                                        <MenuItem Header="Düzeni yeniden düzenle"
-                                                                  ToolTip="Uygulamaları yerlerinde açar ve düzenleme moduna geçer"
-                                                                  Visibility="{Binding HasLayout, Converter={StaticResource BoolToVisibility}}"
-                                                                  Click="EditLayoutItem_Click" />
-                                                        <Separator Visibility="{Binding HasLayout, Converter={StaticResource BoolToVisibility}}" />
-                                                        <MenuItem Header="Sil" Click="DeleteGroupItem_Click" />
-                                                    </ContextMenu>
-                                                </DockPanel.ContextMenu>
-                                                <Button DockPanel.Dock="Right"
-                                                        Style="{StaticResource PanelGhostButton}"
-                                                        Height="24"
-                                                        Padding="10,0"
-                                                        Content="Hepsini aç"
-                                                        Margin="6,0,0,0"
-                                                        AutomationProperties.Name="{Binding Name, StringFormat={}{0} hepsini aç}"
-                                                        ToolTip="Açık olmayanları açar, açık olanları öne getirir; düzen kayıtlıysa pencereleri yerlerine koyar"
-                                                        Click="OpenAllButton_Click" />
-                                                <Button DockPanel.Dock="Right"
-                                                        Style="{StaticResource PanelGhostButton}"
-                                                        Height="24"
-                                                        Padding="9,0"
-                                                        AutomationProperties.Name="{Binding Name, StringFormat={}{0} ekle}"
-                                                        ToolTip="Ekle"
-                                                        Click="AddButton_Click">
-                                                    <Path Data="M5,0 L5,10 M0,5 L10,5"
-                                                          Stroke="{StaticResource TextPrimary}"
-                                                          StrokeThickness="1.5"
-                                                          StrokeStartLineCap="Round"
-                                                          StrokeEndLineCap="Round" />
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu>
-                                                            <MenuItem Header="Program veya kısayol..." Click="AddFilesItem_Click" />
-                                                            <MenuItem Header="Klasör..." Click="AddFolderItem_Click" />
-                                                            <MenuItem Header="Store uygulaması..." Click="AddStoreAppItem_Click" />
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                </Button>
-                                                <Image Source="{Binding Icon.LargeIcon}" MaxWidth="18" MaxHeight="18" VerticalAlignment="Center">
-                                                    <Image.Style>
-                                                        <Style TargetType="Image">
-                                                            <Setter Property="Margin" Value="0,0,6,0" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IconPath}" Value="{x:Null}">
-                                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Image.Style>
-                                                </Image>
-                                                <TextBlock Text="{Binding Name}"
-                                                           Foreground="{StaticResource TextPrimary}"
-                                                           FontSize="13"
-                                                           FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding Summary}"
-                                                           Foreground="{StaticResource TextPrimary}"
-                                                           Opacity="0.7"
-                                                           FontSize="11"
-                                                           Margin="7,0,0,0"
-                                                           VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </DockPanel>
-                                            <!-- Boş grup: bırakma alanı -->
-                                            <Grid Height="58" Margin="2,2,2,2">
-                                                <Grid.Style>
-                                                    <Style TargetType="Grid">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Grid.Style>
-                                                <Rectangle RadiusX="10"
-                                                           RadiusY="10"
-                                                           Stroke="{StaticResource DropHighlight}"
-                                                           StrokeThickness="1"
-                                                           StrokeDashArray="4 4" />
-                                                <TextBlock Text="Uygulama ya da klasörü buraya sürükleyin"
-                                                           Foreground="{StaticResource TextPrimary}"
-                                                           Opacity="0.85"
-                                                           FontSize="12"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" />
-                                            </Grid>
-                                            <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <WrapPanel />
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Button Style="{StaticResource PanelTile}"
-                                                                AllowDrop="True"
-                                                                AutomationProperties.Name="{Binding Name}"
-                                                                ToolTip="{Binding Name}"
-                                                                PreviewMouseLeftButtonDown="ItemButton_PreviewMouseLeftButtonDown"
-                                                                PreviewMouseMove="ItemButton_PreviewMouseMove"
-                                                                DragOver="ItemButton_DragOver"
-                                                                Drop="ItemButton_Drop"
-                                                                Click="ItemButton_Click">
-                                                            <Button.ContextMenu>
-                                                                <ContextMenu>
-                                                                    <MenuItem Header="Yeni kopya aç" Click="NewInstanceItem_Click" />
-                                                                    <MenuItem Header="Dosya konumunu aç" Click="OpenLocationItem_Click" IsEnabled="{Binding HasFileLocation}" />
-                                                                    <Separator />
-                                                                    <MenuItem Header="Gruptan kaldır" Click="RemoveItem_Click" />
-                                                                </ContextMenu>
-                                                            </Button.ContextMenu>
-                                                            <Grid>
-                                                                <StackPanel Margin="4,10,4,0">
-                                                                    <Image Source="{Binding Icon, Converter={StaticResource IconInk}}" Width="38" Height="38" RenderOptions.BitmapScalingMode="HighQuality" />
-                                                                    <TextBlock Text="{Binding Name}"
-                                                                               FontSize="11.5"
-                                                                               TextAlignment="Center"
-                                                                               TextTrimming="CharacterEllipsis"
-                                                                               Margin="0,6,0,0" />
-                                                                </StackPanel>
-                                                                <Border Style="{StaticResource RunningMark}"
-                                                                        Width="14"
-                                                                        Height="3"
-                                                                        CornerRadius="1.5"
-                                                                        VerticalAlignment="Bottom"
-                                                                        HorizontalAlignment="Center"
-                                                                        Margin="0,0,0,3"
-                                                                        Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
-                                                            </Grid>
-                                                        </Button>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                    <Button Style="{StaticResource PanelTile}"
+                                            Height="102"
+                                            AutomationProperties.Name="{Binding Name}"
+                                            ToolTip="{Binding Contents}"
+                                            Click="LayoutFolder_Click">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Aç" FontWeight="SemiBold" Click="LayoutFolder_Click" />
+                                                <MenuItem Header="Düzeni yeniden düzenle"
+                                                          ToolTip="Uygulamaları yerlerinde açar ve düzenleme moduna geçer"
+                                                          Click="EditLayoutItem_Click" />
+                                                <MenuItem Header="Yeniden adlandır..." Click="RenameGroupItem_Click" />
+                                                <Separator />
+                                                <MenuItem Header="Sil" Click="DeleteGroupItem_Click" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <StackPanel Margin="4,8,4,0">
+                                            <!-- Mini ekran: düzenin pencereleri kaydedildikleri yerde -->
+                                            <local:LayoutPreview Group="{Binding}" Width="72" Height="46" />
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="11.5"
+                                                       TextAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,7,0,0" />
+                                            <TextBlock Text="{Binding WindowSummary}"
+                                                       FontSize="10.5"
+                                                       Foreground="{StaticResource TextSecondary}"
+                                                       TextAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                    </Border>
+                                    </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
