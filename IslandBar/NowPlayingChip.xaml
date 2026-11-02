@@ -97,6 +97,30 @@
                     </Rectangle.RenderTransform>
                 </Rectangle>
             </StackPanel>
+
+            <!-- Claude kartında çubukların yerinde: bitti işareti ya da onay bekliyor noktası -->
+            <Grid x:Name="ClaudeMark"
+                  Grid.Column="2"
+                  Margin="14,0,0,0"
+                  VerticalAlignment="Center"
+                  Visibility="Collapsed"
+                  RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="MarkScale" />
+                </Grid.RenderTransform>
+                <TextBlock x:Name="DoneMark"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondary}"
+                           Text="&#xE73E;" />
+                <Ellipse x:Name="WaitMark"
+                         Width="8"
+                         Height="8"
+                         VerticalAlignment="Center"
+                         Fill="{StaticResource AttentionFill}"
+                         Visibility="Collapsed" />
+            </Grid>
         </Grid>
     </local:GlassCard>
 </UserControl>

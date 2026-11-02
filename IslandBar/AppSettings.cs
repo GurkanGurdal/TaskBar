@@ -32,6 +32,8 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _customStartMenu = true;
     private bool _clockChipOnDesktop = true;
     private bool _showNowPlayingChip = true;
+    // Başka uygulamanın ayar dosyasına yazdığı için kullanıcı açıklamayı okuyup kendisi açar.
+    private bool _showClaudeChip;
     private bool _showVolumeChip = true;
     private bool _keepScreenshots = true;
     private BarTheme _theme = BarTheme.Glass;
@@ -107,6 +109,16 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _showNowPlayingChip;
         set => SetField(ref _showNowPlayingChip, value);
+    }
+
+    /// <summary>
+    /// Claude Code bitirince ya da onay bekleyince şarkı kartıyla aynı kart çıksın. Açıkken IslandBar Claude Code'un ayar
+    /// dosyasına kanca yazar; varsayılan kapalı (kullanıcının seçimi).
+    /// </summary>
+    public bool ShowClaudeChip
+    {
+        get => _showClaudeChip;
+        set => SetField(ref _showClaudeChip, value);
     }
 
     /// <summary>Ses tuşlarında Windows'un göstergesi yerine çubuğun kartı; kapalıyken tuşlara hiç karışılmaz.</summary>

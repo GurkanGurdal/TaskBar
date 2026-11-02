@@ -13,6 +13,8 @@ namespace IslandBar;
 /// <summary>
 /// Yeni şarkı başlayınca çubuğun yanında beliren küçük kart: kapak, ad, sanatçı. Odak almaz, kısa sürede kendi gider,
 /// üzerine gelince bekler, tıklayınca şarkının uygulamasına geçer. Yerini <see cref="BarWindow"/> belirler.
+/// Claude Code bitirince ya da onay bekleyince aynı kart Claude kipinde çıkar (<see cref="SetClaude"/>): kapak yerine
+/// Claude'un ikonu, çubuklar yerine bitti işareti ya da kehribar nokta.
 /// Gelişi: çubuktan kapak büyüklüğünde bir cam damla fırlar, yay gibi oturur, kart yana açılır, yazılar bulanıklıktan netleşir.
 /// Her şey tek saatten hesaplanır (<see cref="Motion"/>): yarıda kesilince gidiş bulunduğu yerden başlar.
 /// </summary>
@@ -112,6 +114,9 @@ public partial class NowPlayingChip : UserControl
 
     internal string AppId { get; private set; } = string.Empty;
 
+    /// <summary>Şarkı değil Claude kartı gösteriliyor.</summary>
+    internal bool IsClaude { get; private set; }
+
     public bool IsHiding => _isHiding;
 
     /// <summary>Görüntüsü alındı, kart ekranda.</summary>
@@ -151,7 +156,43 @@ public partial class NowPlayingChip : UserControl
         AppId = track.AppId;
         TitleText.Text = track.Title;
         ArtistText.Text = track.Artist;
+        ArtistText.Foreground = (Brush)FindResource("TextSecondary");
         SetCover(track);
+        SetKind(claude: false);
+    }
+
+    /// <summary>
+    /// Claude kipi (kullanıcının seçtiği düzen): üstte proje, altta durum; onay beklerken durum kehribar. Cevabın metni
+    /// gösterilmez. İkonu yoksa (Claude terminalde) genel sohbet işareti.
+    /// </summary>
+    internal void SetClaude(ImageSource? icon, string project, string status, bool waiting)
+    {
+        AppId = string.Empty;
+        TitleText.Text = project;
+        ArtistText.Text = status;
+        ArtistText.Foreground = (Brush)FindResource(waiting ? "AttentionFill" : "TextSecondary");
+        Cover.ImageSource = icon;
+        CoverGlyph.Visibility = icon == null ? Visibility.Visible : Visibility.Collapsed;
+        DoneMark.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
+        WaitMark.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
+        SetKind(claude: true);
+    }
+
+    /// <summary>Açık kart kip değiştirirse çubuklar da durur ya da başlar.</summary>
+    private void SetKind(bool claude)
+    {
+        IsClaude = claude;
+        CoverGlyph.Text = claude ? "" : "";
+        BarsPanel.Visibility = claude ? Visibility.Collapsed : Visibility.Visible;
+        ClaudeMark.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
+        if (claude)
+        {
+            StopBars();
+        }
+        else if (IsShown)
+        {
+            StartBars();
+        }
     }
 
     /// <summary>Kapak şarkıdan sonra gelebildiği için ayrı güncellenir.</summary>
@@ -183,7 +224,10 @@ public partial class NowPlayingChip : UserControl
         }
 
         IsShown = true;
-        StartBars();
+        if (!IsClaude)
+        {
+            StartBars();
+        }
         RestartDismiss(ShowSeconds);
 
         if (!SystemParameters.ClientAreaAnimation)
@@ -370,6 +414,9 @@ public partial class NowPlayingChip : UserControl
         BarsScale.ScaleX = bars;
         BarsScale.ScaleY = bars;
         BarsPanel.Opacity = Math.Min(1, bars);
+        MarkScale.ScaleX = bars;
+        MarkScale.ScaleY = bars;
+        ClaudeMark.Opacity = Math.Min(1, bars);
     }
 
     private void DrawLeave(double elapsed)
@@ -388,6 +435,7 @@ public partial class NowPlayingChip : UserControl
         TitleText.Opacity = Math.Min(TitleText.Opacity, text);
         ArtistText.Opacity = Math.Min(ArtistText.Opacity, text);
         BarsPanel.Opacity = Math.Min(BarsPanel.Opacity, text);
+        ClaudeMark.Opacity = Math.Min(ClaudeMark.Opacity, text);
     }
 
     /// <summary>Camın görünen bölümü ve yeri. Yerleşim değişmez: kapak görünen kısmın başına yapışık gider, yazılar yerinde açığa çıkar.</summary>
@@ -473,6 +521,9 @@ public partial class NowPlayingChip : UserControl
         BarsScale.ScaleX = 1;
         BarsScale.ScaleY = 1;
         BarsPanel.Opacity = 1;
+        MarkScale.ScaleX = 1;
+        MarkScale.ScaleY = 1;
+        ClaudeMark.Opacity = 1;
         DrawText(TitleText, TitleSlide, _titleBlur, 1);
         DrawText(ArtistText, ArtistSlide, _artistBlur, 1);
         Card.Opacity = 1;

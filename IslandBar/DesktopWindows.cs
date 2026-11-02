@@ -39,6 +39,39 @@ internal static class DesktopWindows
         return DwmGetWindowAttribute(window, DwmCloaked, out int cloaked, sizeof(int)) != 0 || cloaked == 0;
     }
 
+    /// <summary>Sürecin açık bir menüsü (<c>#32768</c>, tepsi ikonlarının çoğunun sağ tık menüsü) var mı?</summary>
+    public static bool HasMenu(uint process)
+    {
+        IntPtr menu = IntPtr.Zero;
+        while ((menu = FindWindowEx(IntPtr.Zero, menu, MenuClass, null)) != IntPtr.Zero)
+        {
+            if (IsWindowVisible(menu) && GetWindowThreadProcessId(menu, out uint owner) != 0 && owner == process)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Masaüstünün kendisi (Gezgin'in Progman / WorkerW pencereleri): öne gelse de açılır pencere sayılmaz.</summary>
+    public static bool IsDesktop(IntPtr window)
+    {
+        if (window == GetShellWindow())
+        {
+            return true;
+        }
+
+        var name = new System.Text.StringBuilder(16);
+        GetClassName(window, name, name.Capacity);
+        return name.ToString() is "WorkerW" or "Progman";
+    }
+
+    /// <summary>Pencerenin şu an bulunduğu ekran. ManagedShell'in <c>HMonitor</c>'u yeni pencerede geç güncelleniyor.</summary>
+    public static IntPtr MonitorOf(IntPtr window)
+    {
+        return MonitorFromWindow(window, MonitorDefaultToNearest);
+    }
+
     /// <summary>Üst seviye pencerelerin sırası, en üstteki önce.</summary>
     public static List<IntPtr> ZOrder()
     {
@@ -51,7 +84,25 @@ internal static class DesktopWindows
         return windows;
     }
 
+    private const string MenuClass = "#32768";
+    private const uint MonitorDefaultToNearest = 2;
+
+    [DllImport("user32")]
+    private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string? title);
+
+    [DllImport("user32")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+
+    [DllImport("user32")]
+    private static extern IntPtr GetShellWindow();
+
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int length);
 
     [DllImport("user32")]
     private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);

@@ -76,6 +76,11 @@
                            Foreground="#606060"
                            TextWrapping="Wrap"
                            Text="Çubuğun yanında birkaç saniyelik küçük bir kart çıkar. Tam ekranda çıkmaz." />
+                <CheckBox Content="Claude Code bitirince ya da onay bekleyince göster" Margin="0,16,0,0" IsChecked="{Binding ShowClaudeChip}" />
+                <TextBlock Margin="20,2,0,0"
+                           Foreground="#606060"
+                           TextWrapping="Wrap"
+                           Text="Şarkı kartıyla aynı yerde çıkar. Claude zaten öndeyse çıkmaz. Bunun için IslandBar, Claude Code'un ayar dosyasına (kullanıcı klasörünüzde .claude\settings.json) kendi kancasını yazar: Claude Code her cevabı bitirdiğinde ve onay beklediğinde IslandBar'ı çağırır. Dosyadaki öteki ayarlarınıza dokunulmaz; kapatınca kanca silinir. Claude Code kurulu değilse dosyaya bir şey yazılmaz." />
                 <CheckBox Content="Ses tuşlarında çubuğun göstergesini kullan" Margin="0,16,0,0" IsChecked="{Binding ShowVolumeChip}" />
                 <TextBlock Margin="20,2,0,0"
                            Foreground="#606060"

@@ -11,7 +11,8 @@ namespace IslandBar;
 /// beğenilmedi): pencere sayısı kadar parça, en çok dört. Tek pencerede pasifken kısa, birden çok pencerede ya da
 /// etkinken tam boy; etkin uygulamada öndeki pencerenin parçası parlak ve uzun (ötekiler kısalır), tekerlekle
 /// gezinirken uzunluk komşu parçaya akar. Dikkat
-/// isteyen pencerede tümü kehribar, yanıp söner. Yan çubukta dik durur.
+/// isteyen pencerede tümü kehribar: Windows'taki gibi birkaç kez yanıp söner, sonra uygulamaya geçilene kadar sabit
+/// kalır (sürekli animasyon yok). Yan çubukta dik durur.
 /// </summary>
 public sealed class WindowMarks : FrameworkElement
 {
@@ -51,6 +52,7 @@ public sealed class WindowMarks : FrameworkElement
     private const int ShrinkMs = 180;
     private const int PulseMs = 600;
     private const double PulseOpacity = 0.35;
+    private const int PulseCount = 3;
 
     public int Count
     {
@@ -152,12 +154,15 @@ public sealed class WindowMarks : FrameworkElement
     private static void StateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var marks = (WindowMarks)d;
-        marks.Animate();
+        marks.Animate(e.Property == StateProperty);
         marks.MoveFocus();
     }
 
-    /// <summary>Tek pencerede pasifken kısa; birden çok pencerede parçalar sığsın diye hep tam boy.</summary>
-    private void Animate()
+    /// <summary>
+    /// Tek pencerede pasifken kısa; birden çok pencerede parçalar sığsın diye hep tam boy. Yanıp sönme yalnızca dikkat
+    /// isteği başlayınca: pencere sayısı değişince yeniden başlamaz.
+    /// </summary>
+    private void Animate(bool stateChanged)
     {
         bool full = State != ApplicationWindow.WindowState.Inactive || Count > 1;
         double target = full ? 1 : ShortExtent;
@@ -168,12 +173,18 @@ public sealed class WindowMarks : FrameworkElement
             EasingFunction = full ? new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 } : null
         });
 
+        if (!stateChanged)
+        {
+            return;
+        }
+
         if (State == ApplicationWindow.WindowState.Flashing && animate)
         {
+            // AutoReverse her turu 1'de bitirir: sonunda sabit kehribar kalır.
             BeginAnimation(OpacityProperty, new DoubleAnimation(1, PulseOpacity, TimeSpan.FromMilliseconds(PulseMs))
             {
                 AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever
+                RepeatBehavior = new RepeatBehavior(PulseCount)
             });
         }
         else

@@ -46,6 +46,10 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
 - Gruplar artık yalnızca **Düzenler** (veri hâlâ `AppSettings.Groups`): mini ekran önizlemeli kart, "Yeni düzen"
   düzenleme modunu açar, kaydet ekrandaki pencereleri yerleriyle yazar, açınca yerlerine koyar (`LayoutEditor`,
   `WindowSpot`, `WindowDocument`).
+- Dikkat isteği ManagedShell'de yarım saniye sürer (`HSHELL_REDRAW` sıfırlar): `TaskGroup.WantsAttention` kullan,
+  `ApplicationWindow.State`'e bakma. Otomatik gizlemede çubuk dikkat isteyen pencere ve tepsi menüsü açıkken açık kalır.
+- Claude kartı: Claude Code kancası (`IslandBar.exe --claude-hook`) → adlı boru → şarkı kartının Claude kipi; kancayı IslandBar kurar (`ClaudeHookSetup`, Release'de). Bildirim
+  paneli yok: paketsiz uygulama Windows bildirimlerini okuyamıyor (ayrıntı notlarda).
 - Zamanlayıcı: `DispatcherTimer` boş arayüz iş parçacığında geç tetiklenebiliyor; zamanlaması önemli izleme
   `Pulse` ile (otomatik gizlemenin açılmama sorunu buydu).
 
@@ -90,5 +94,5 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
 - Hata kaydı `crash.log`; çubuk kendiliğinden kapanırsa önce oraya bak.
 
 ## Bilinen eksikler
-Balon bildirimleri; otomatik gizlemede dikkat isteyen pencere ve tepsi menüsü açıkken çubuk görünür kalmıyor.
+Balon bildirimleri.
 Gerçek Explorer yeniden başlatması, monitör takıp çıkarma, yan/üst çubukta son görsel değişiklikler denenmedi.

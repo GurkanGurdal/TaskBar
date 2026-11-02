@@ -31,6 +31,12 @@ public partial class App : Application
 
     public App()
     {
+        // Claude Code kancası: olayı çalışan çubuğa iletip hemen çıkar, Claude'u bekletmez.
+        if (ClaudeHook.RunIfRequested())
+        {
+            Environment.Exit(0);
+        }
+
         if (TaskbarRecovery.RunWatchdogIfRequested())
         {
             Environment.Exit(0);
@@ -127,12 +133,17 @@ public partial class App : Application
         ThreadPool.RegisterWaitForSingleObject(_showSettingsSignal,
             (_, _) => Dispatcher.BeginInvoke(OpenSettings), null, Timeout.Infinite, false);
 
+        ClaudeHook.Listen(note => Dispatcher.BeginInvoke(() => ShowClaudeNote(note)));
+
         TaskbarRecovery.StartWatchdog();
 
         StartupRegistration.RepairApproval();
 #if !DEBUG
         // Testte Debug derlemesi kısayolu kendine çevirmesin.
         StartupRegistration.EnsureStartMenuShortcut();
+
+        // Uygulama taşındıysa kanca yeni yeri göstersin; Debug derlemesi kullanıcının kancasını kendine çevirmesin.
+        ClaudeHookSetup.Sync(_settings.ShowClaudeChip);
 #endif
     }
 
@@ -154,6 +165,12 @@ public partial class App : Application
         else if (e.PropertyName == nameof(AppSettings.ShowVolumeChip))
         {
             ApplyVolumeChipMode();
+        }
+        else if (e.PropertyName == nameof(AppSettings.ShowClaudeChip))
+        {
+#if !DEBUG
+            ClaudeHookSetup.Sync(_settings!.ShowClaudeChip);
+#endif
         }
         else if (e.PropertyName == nameof(AppSettings.Theme))
         {
@@ -237,6 +254,12 @@ public partial class App : Application
         {
             // Aygıt tam bu sırada çıkarılmış olabilir; sonraki basışta varsayılan yeniden bulunur.
         }
+    }
+
+    /// <summary>Kart Claude'un penceresinin bulunduğu ekranda çıkar; pencere yoksa (terminalde) ana ekranda.</summary>
+    private void ShowClaudeNote(ClaudeNote note)
+    {
+        (_bars.FirstOrDefault(bar => bar.ShowsClaudeWindow) ?? _bars.FirstOrDefault(bar => bar.Screen.Primary))?.ShowClaude(note);
     }
 
     /// <summary>Windows tuşu ilk seferde beklemesin; açılışı yavaşlatmamak için boşta yapılır.</summary>

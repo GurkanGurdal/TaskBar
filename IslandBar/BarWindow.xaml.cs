@@ -188,6 +188,7 @@ public partial class BarWindow : AppBarWindow
     private TaskCompletionSource? _warmDone;
     private readonly NowPlayingWatcher? _nowPlaying;
     private bool _chipAtBarPlace;
+    private ImageSource? _claudeIcon;
     private bool _volumeAtBarPlace;
     private bool _glassWaitsForVolume;
     private Point _volumePlace;
@@ -221,6 +222,10 @@ public partial class BarWindow : AppBarWindow
     private readonly RectangleGeometry _clockChipClip = new();
     private FrameworkElement[] _clockChipFades = [];
     private bool _startMenuVisible;
+    private bool _attentionWanted;
+    private uint _trayMenuProcess;
+    private long _trayMenuSince;
+    private const int TrayMenuGraceMs = 1500;
 
     public BarWindow(ShellManager shellManager, AppSettings settings, AppBarScreen screen)
         : base(shellManager.AppBarManager, shellManager.ExplorerHelper, shellManager.FullScreenHelper,
@@ -304,7 +309,17 @@ public partial class BarWindow : AppBarWindow
                 RefreshGlass();
             }
         };
-        Chip.Clicked += () => QuickPanel.OpenMediaApp(Chip.AppId);
+        Chip.Clicked += () =>
+        {
+            if (Chip.IsClaude)
+            {
+                FocusClaude();
+            }
+            else
+            {
+                QuickPanel.OpenMediaApp(Chip.AppId);
+            }
+        };
         ToolsContent.DragStarted += ToolsContent_DragStarted;
         ToolsContent.DragFinished += ToolsContent_DragFinished;
         ToolsContent.Opened += ClosePanel;
@@ -750,13 +765,65 @@ public partial class BarWindow : AppBarWindow
         return CanRetract() && !_desktopClear;
     }
 
-    /// <summary>Çubuğa şu an ihtiyaç yok: pencere varsa gizlenir, yoksa saate dönüşür.</summary>
+    /// <summary>
+    /// Çubuğa şu an ihtiyaç yok: pencere varsa gizlenir, yoksa saate dönüşür. Windows'un çubuğu gibi bu ekranda dikkat
+    /// isteyen pencere varken (uygulamaya geçilene kadar) ve tepsi ikonunun açtığı menü açıkken de görünür kalır.
+    /// </summary>
     private bool CanRetract()
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
         return base.ShouldAllowAutoHide() && !_cursorInBarZone && !HoldsBar(GroupPanel) && !HoldsBar(TrayPopup) && !HoldsBar(ToolsPopup)
             && !HoldsBar(CalendarPopup) && !HoldsBar(PreviewPopup) && !HoldsBar(QuickPopup) && !HoldsBar(StartPopup) && _geniesPlaying == 0 && !(_startMenuVisible && Screen.Primary)
-            && _draggedGroup == null;
+            && _draggedGroup == null && !_attentionWanted && _trayMenuProcess == 0;
+    }
+
+    private bool IsAttentionWanted()
+    {
+        // Sabitlenmiş uygulamanın pencereleri her ekrandan toplanıyor: yalnızca bu ekrandakiler sayılır.
+        return _taskGroups.Any(group => group.Windows.Any(window => window.HMonitor == Screen.HMonitor && group.WantsAttention(window)));
+    }
+
+    /// <summary>Tepsi ikonuna tıklandı: uygulamanın açacağı menü ya da açılır pencere kapanana kadar çubuk gizlenmesin.</summary>
+    private void WatchTrayMenu(NotifyIcon icon)
+    {
+        if (AppBarMode != AppBarMode.AutoHide)
+        {
+            return;
+        }
+
+        NativeMethods.GetWindowThreadProcessId(icon.HWnd, out uint process);
+        _trayMenuProcess = process;
+        _trayMenuSince = Environment.TickCount64;
+        OnPropertyChanged(nameof(AllowAutoHide));
+    }
+
+    /// <summary>
+    /// Menü biraz geç açılabilir: tıklamadan sonra kısa bir süre her durumda beklenir. Sonra uygulamanın menüsü
+    /// (<c>#32768</c>) ya da öndeki, görev çubuğunda olmayan penceresi (OneDrive gibi açılır pencereler, Electron
+    /// menüleri) durdukça tutulur. Menüsü kapanınca öne gizli pencere kalabildiği için yalnızca görünen pencere sayılır.
+    /// </summary>
+    private bool UpdateTrayMenu()
+    {
+        if (_trayMenuProcess == 0 || Environment.TickCount64 - _trayMenuSince < TrayMenuGraceMs)
+        {
+            return false;
+        }
+
+        if (DesktopWindows.HasMenu(_trayMenuProcess))
+        {
+            return false;
+        }
+
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        NativeMethods.GetWindowThreadProcessId(foreground, out uint process);
+        if (process == _trayMenuProcess && DesktopWindows.IsShown(foreground) && !DesktopWindows.IsDesktop(foreground)
+            && !_allWindows.OfType<ApplicationWindow>().Any(window => window.Handle == foreground))
+        {
+            return false;
+        }
+
+        _trayMenuProcess = 0;
+        return true;
     }
 
     /// <summary>Isınmak için görünmeden açılan kart çubuğu ortaya çıkarmaz.</summary>
@@ -838,6 +905,16 @@ public partial class BarWindow : AppBarWindow
             bool clear = IsDesktopClear();
             changed |= clear != _desktopClear;
             _desktopClear = clear;
+
+            bool attention = IsAttentionWanted();
+            if (attention != _attentionWanted)
+            {
+                AutoHideLog.Write($"{Screen.DeviceName} dikkat isteyen pencere {(attention ? "var" : "kalmadı")}");
+                changed = true;
+            }
+            _attentionWanted = attention;
+
+            changed |= UpdateTrayMenu();
         }
 
         // Önce çip: gizli çubuk yukarı kaymaya başlamadan doğru şekle geçsin.
@@ -1454,7 +1531,8 @@ public partial class BarWindow : AppBarWindow
         icon.IconMouseUp(e.ChangedButton, CursorParam(), doubleClickTime);
         e.Handled = true;
 
-        // Uygulama kendi menüsünü açarken kart yolda kalmasın.
+        // Uygulama kendi menüsünü açarken kart yolda kalmasın; çubuk menü kapanana kadar kalır.
+        WatchTrayMenu(icon);
         ClosePopup(TrayPopup);
     }
 
@@ -1699,7 +1777,8 @@ public partial class BarWindow : AppBarWindow
             _prep.Clear();
             Chip.Dismiss();
         }
-        else if (e.PropertyName == nameof(AppSettings.ShowNowPlayingChip) && !_settings.ShowNowPlayingChip)
+        else if ((e.PropertyName == nameof(AppSettings.ShowNowPlayingChip) && !_settings.ShowNowPlayingChip && !Chip.IsClaude)
+            || (e.PropertyName == nameof(AppSettings.ShowClaudeChip) && !_settings.ShowClaudeChip && Chip.IsClaude))
         {
             Chip.Dismiss();
         }
@@ -2900,7 +2979,138 @@ public partial class BarWindow : AppBarWindow
 
     private void ChipPopup_Closed(object? sender, EventArgs e)
     {
-        _nowPlaying!.WantsUpdates = false;
+        // Claude kartı ana ekran dışında da çıkabiliyor; orada şarkı izleyicisi yok.
+        if (_nowPlaying != null)
+        {
+            _nowPlaying.WantsUpdates = false;
+        }
+    }
+
+    /// <summary>Claude'un penceresi bu ekranda: kart onun yanında çıksın.</summary>
+    internal bool ShowsClaudeWindow => _taskWindows.OfType<ApplicationWindow>().Any(IsClaudeWindow);
+
+    /// <summary>
+    /// Claude Code bitirdi ya da onay bekliyor: şarkı kartıyla aynı kart, aynı yerde (kullanıcının seçimi). Claude zaten
+    /// öndeyse kullanıcı görüyor, çıkmaz. Terminaldeki Claude Code'un kendi penceresi yok; o zaman ikon yerine işaret.
+    /// </summary>
+    internal async void ShowClaude(ClaudeNote note)
+    {
+        ApplicationWindow? claude = ClaudeWindow();
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        NativeMethods.GetWindowThreadProcessId(foreground, out uint foregroundProcess);
+        string? skip = !_settings.ShowClaudeChip ? "ayar kapalı"
+            : IsClaudeProcess(foregroundProcess) ? "Claude önde"
+            : IsClaudeInSight() ? "Claude ekranında en üstte"
+            : _fullScreenOnThisBar ? "tam ekran"
+            : IsAnyPanelActive() || VolumePopup.IsOpen ? "kart açık"
+            : NowPlayingChip.IsUserBusy() ? "rahatsız etme"
+            : null;
+        AutoHideLog.Write($"{Screen.DeviceName} Claude olayı '{note.Project}: {note.Status}' {(skip == null ? "gösteriliyor" : "gösterilmedi: " + skip)}, " +
+            $"öndeki '{WindowTitle(foreground)}' ({ProcessName(foregroundProcess)})");
+        if (skip != null)
+        {
+            return;
+        }
+
+        // Pencerenin ikonu ManagedShell'de geç yükleniyor, ilk kartta boş geliyordu; exe'den bir kez büyük boy alınır.
+        if (_claudeIcon == null && claude != null && ProcessPath(claude.Handle) is { } path)
+        {
+            _claudeIcon = await AppIcon.LoadAsync(path);
+        }
+
+        Chip.SetClaude(_claudeIcon ?? claude?.Icon, note.Project, note.Status, note.IsWaiting);
+        if (ChipPopup.IsOpen)
+        {
+            PlaceChip();
+            Chip.Renew();
+            return;
+        }
+
+        ChipPopup.IsOpen = true;
+    }
+
+    private void FocusClaude()
+    {
+        if (ClaudeWindow() is { } claude)
+        {
+            TakeForeground();
+            claude.BringToFront();
+        }
+    }
+
+    private static string? ProcessPath(IntPtr window)
+    {
+        NativeMethods.GetWindowThreadProcessId(window, out uint processId);
+        try
+        {
+            using Process process = Process.GetProcessById((int)processId);
+            return process.MainModule?.FileName;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Öndeki pencere Claude'un mu? Claude'un birden çok üst düzey penceresi var; öndekini tek bir pencereyle
+    /// karşılaştırmak tutmadı (Claude önündeyken kart çıkıyordu), bu yüzden sürece bakılır.
+    /// </summary>
+    private bool IsClaudeProcess(uint processId)
+    {
+        return processId != 0 && _allWindows.OfType<ApplicationWindow>().Where(IsClaudeWindow).Any(window =>
+        {
+            NativeMethods.GetWindowThreadProcessId(window.Handle, out uint claudeProcess);
+            return claudeProcess == processId;
+        });
+    }
+
+    /// <summary>
+    /// Claude kendi ekranında en üstteki uygulama penceresi mi, yani kullanıcı onu görüyor mu? Öndeki pencereye bakmak
+    /// yetmedi: çubuk yeniden başlayınca odak IslandBar'da kalıyordu, Claude ekrandayken kart yine çıkıyordu.
+    /// </summary>
+    private bool IsClaudeInSight()
+    {
+        var windows = new Dictionary<IntPtr, ApplicationWindow>();
+        foreach (ApplicationWindow window in _allWindows.OfType<ApplicationWindow>())
+        {
+            windows.TryAdd(window.Handle, window);
+        }
+        if (!windows.Values.Any(IsClaudeWindow))
+        {
+            return false;
+        }
+
+        var screensSeen = new HashSet<IntPtr>();
+        foreach (IntPtr handle in DesktopWindows.ZOrder())
+        {
+            if (!windows.TryGetValue(handle, out ApplicationWindow? window) || !DesktopWindows.IsShown(handle) || !screensSeen.Add(DesktopWindows.MonitorOf(handle)))
+            {
+                continue;
+            }
+
+            // Bu ekrandaki en üst uygulama penceresi.
+            if (IsClaudeWindow(window))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ApplicationWindow? ClaudeWindow()
+    {
+        return _allWindows.OfType<ApplicationWindow>().FirstOrDefault(IsClaudeWindow);
+    }
+
+    /// <summary>
+    /// Claude masaüstü uygulaması: paket kimliği (Claude_…) ya da exe adı Claude.exe. Paketli uygulamada exe yolu
+    /// boş gelebiliyor, yalnızca ada bakınca bulunamadı. Terminaldeki claude.exe'nin penceresi yok.
+    /// </summary>
+    private static bool IsClaudeWindow(ApplicationWindow window)
+    {
+        return (window.AppUserModelID?.StartsWith("Claude_", StringComparison.OrdinalIgnoreCase) ?? false)
+            || string.Equals(System.IO.Path.GetFileName(window.WinFileName), "claude.exe", StringComparison.OrdinalIgnoreCase);
     }
 
     private void Chip_SizeChanged(object sender, SizeChangedEventArgs e)

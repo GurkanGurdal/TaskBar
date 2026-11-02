@@ -13,6 +13,12 @@ public sealed class TaskGroup : INotifyPropertyChanged
 {
     private ApplicationWindow? _lastActive;
 
+    /// <summary>
+    /// Dikkat isteyen pencereler. ManagedShell yanıp sönmenin her sönük anında (<c>HSHELL_REDRAW</c>) durumu
+    /// Inactive'e çeviriyor; Windows'un çubuğu gibi uygulamaya geçilene kadar burada tutulur.
+    /// </summary>
+    private readonly HashSet<ApplicationWindow> _wanting = new();
+
     public TaskGroup(string key, GroupItem? pin = null)
     {
         Key = key;
@@ -53,11 +59,17 @@ public sealed class TaskGroup : INotifyPropertyChanged
     /// <summary>Göstergede parlayacak parça; etkin pencere yoksa -1.</summary>
     public int ActiveIndex => ActiveWindow is { } active ? Windows.IndexOf(active) : -1;
 
+    /// <summary>Pencere dikkat istedi ve o zamandan beri öne gelmedi.</summary>
+    public bool WantsAttention(ApplicationWindow window)
+    {
+        return _wanting.Contains(window);
+    }
+
     public ApplicationWindow.WindowState State
     {
         get
         {
-            if (Windows.Any(window => window.State == ApplicationWindow.WindowState.Flashing))
+            if (_wanting.Count > 0)
             {
                 return ApplicationWindow.WindowState.Flashing;
             }
@@ -93,6 +105,7 @@ public sealed class TaskGroup : INotifyPropertyChanged
         {
             window.PropertyChanged -= Window_PropertyChanged;
             Windows.Remove(window);
+            _wanting.Remove(window);
             changed = true;
         }
 
@@ -100,6 +113,10 @@ public sealed class TaskGroup : INotifyPropertyChanged
         {
             window.PropertyChanged += Window_PropertyChanged;
             Windows.Add(window);
+            if (window.State == ApplicationWindow.WindowState.Flashing)
+            {
+                _wanting.Add(window);
+            }
             changed = true;
         }
 
@@ -129,9 +146,18 @@ public sealed class TaskGroup : INotifyPropertyChanged
 
     private void Window_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ApplicationWindow.State) && ((ApplicationWindow)sender!).State == ApplicationWindow.WindowState.Active)
+        if (e.PropertyName == nameof(ApplicationWindow.State))
         {
-            _lastActive = (ApplicationWindow)sender!;
+            var window = (ApplicationWindow)sender!;
+            if (window.State == ApplicationWindow.WindowState.Active)
+            {
+                _lastActive = window;
+                _wanting.Remove(window);
+            }
+            else if (window.State == ApplicationWindow.WindowState.Flashing)
+            {
+                _wanting.Add(window);
+            }
         }
 
         if (e.PropertyName is nameof(ApplicationWindow.State) or nameof(ApplicationWindow.Title) or nameof(ApplicationWindow.Icon))
