@@ -150,6 +150,7 @@ public partial class BarWindow : AppBarWindow
     private IntPtr _windowsTray;
     private AppGroup? _addTargetGroup;
     private readonly DispatcherTimer _dragOpenTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private GlassCard? _dragOpenCard;
     private bool _startMenuWasOpen;
     private readonly ObservableCollection<TaskGroup> _taskGroups = new();
     private TaskGroup? _pressedTaskGroup;
@@ -3279,8 +3280,32 @@ public partial class BarWindow : AppBarWindow
             GroupPanel.PlacementTarget = GroupsButton;
             PlacePopup(GroupPanel, PanelCard);
             GroupPanel.IsOpen = true;
+            _dragOpenCard = PanelCard;
             _dragOpenTimer.Start();
         }
+    }
+
+    private void ToolsButton_DragEnter(object sender, DragEventArgs e)
+    {
+        // Dosya rafı kartın içinde: sürüklerken açılsın, dosya bırakılacak yeri görsün.
+        if (SetDropEffect(e) && !ToolsPopup.IsOpen)
+        {
+            EndWarm();
+            ClosePanel();
+            PlacePopup(ToolsPopup, ToolsCard);
+            ToolsPopup.IsOpen = true;
+            _dragOpenCard = ToolsCard;
+            _dragOpenTimer.Start();
+        }
+    }
+
+    private void ToolsButton_Drop(object sender, DragEventArgs e)
+    {
+        if (SetDropEffect(e) && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            FileShelf.Shared.Add(paths);
+        }
+        e.Handled = true;
     }
 
     private void GroupsButton_DragOver(object sender, DragEventArgs e)
@@ -3309,11 +3334,11 @@ public partial class BarWindow : AppBarWindow
         _dragOpenTimer.Stop();
 
         // Bırakıldı. İmleç paneldeyse normal açık panele dön, değilse kapat: etkin olmayan panel kendiliğinden kapanmaz.
-        if (GroupPanel.IsOpen && IsCursorOver(PanelCard))
+        if (_dragOpenCard != null && IsCursorOver(_dragOpenCard))
         {
             Activate();
         }
-        if (!IsActive || !IsCursorOver(PanelCard))
+        if (!IsActive || _dragOpenCard == null || !IsCursorOver(_dragOpenCard))
         {
             ClosePanel();
         }
@@ -3336,7 +3361,7 @@ public partial class BarWindow : AppBarWindow
     [System.Runtime.InteropServices.DllImport("user32")]
     private static extern short GetAsyncKeyState(int key);
 
-    private static bool SetDropEffect(DragEventArgs e)
+    internal static bool SetDropEffect(DragEventArgs e)
     {
         // Araçlar kartından sürüklenen ekran görüntüsü başka yere gidiyor; çubuğa düşerse pin olmasın.
         bool canDrop = e.Data.GetDataPresent(DataFormats.FileDrop) && !e.Data.GetDataPresent(ToolsPanel.InternalDragFormat);

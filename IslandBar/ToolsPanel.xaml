@@ -3,6 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:IslandBar"
              FontFamily="{StaticResource UiFont}"
+             AllowDrop="True"
+             DragEnter="Panel_DragOver"
+             DragOver="Panel_DragOver"
+             DragLeave="Panel_DragLeave"
+             Drop="Panel_Drop"
              Width="452">
     <UserControl.Resources>
         <QuadraticEase x:Key="Soft" EasingMode="EaseOut" />
@@ -38,9 +43,9 @@
                     Cursor="Hand"
                     RenderTransformOrigin="0.5,0.5"
                     ToolTip="{Binding TimeLabel}"
-                    MouseLeftButtonDown="Shot_MouseLeftButtonDown"
-                    MouseMove="Shot_MouseMove"
-                    MouseLeftButtonUp="Shot_MouseLeftButtonUp">
+                    MouseLeftButtonDown="Tile_MouseLeftButtonDown"
+                    MouseMove="Tile_MouseMove"
+                    MouseLeftButtonUp="Tile_MouseLeftButtonUp">
                 <Border.Background>
                     <ImageBrush ImageSource="{Binding Thumbnail}" Stretch="UniformToFill" AlignmentY="Top" />
                 </Border.Background>
@@ -75,6 +80,45 @@
                             </Storyboard>
                         </BeginStoryboard>
                     </Trigger.ExitActions>
+                </Trigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ShelfTemplate" DataType="{x:Type local:ShelfItem}">
+            <Border x:Name="Tile"
+                    Width="107"
+                    Height="78"
+                    Margin="0,0,8,8"
+                    CornerRadius="10"
+                    Background="Transparent"
+                    Cursor="Hand"
+                    ToolTip="{Binding Path}"
+                    MouseLeftButtonDown="Tile_MouseLeftButtonDown"
+                    MouseMove="Tile_MouseMove"
+                    MouseLeftButtonUp="Tile_MouseLeftButtonUp">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Dosya konumunu aç" Click="RevealShelf_Click" />
+                        <Separator />
+                        <MenuItem Header="Raftan kaldır" Click="RemoveShelf_Click" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <StackPanel VerticalAlignment="Center">
+                    <Image Source="{Binding Icon, Converter={StaticResource IconInk}}"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           Width="32"
+                           Height="32" />
+                    <TextBlock Text="{Binding Name}"
+                               Margin="6,6,6,0"
+                               FontSize="12"
+                               HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{StaticResource TextPrimary}" />
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="Tile" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Tile" Property="Background" Value="{StaticResource HoverBrush}" />
                 </Trigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -119,5 +163,62 @@
                    Margin="0,6,0,6"
                    TextWrapping="Wrap"
                    Text="Henüz görüntü yok. Win + Shift + S ya da Win + PrtScn ile aldıkların burada birikir, son 10 tanesi saklanır." />
+
+        <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+
+        <DockPanel Margin="0,0,0,8">
+            <Button x:Name="ShelfClearButton"
+                    DockPanel.Dock="Right"
+                    Content="Temizle"
+                    ToolTip="Listeyi boşaltır, dosyalara dokunmaz."
+                    Style="{StaticResource ClearButton}"
+                    Click="ShelfClear_Click" />
+            <Border x:Name="ShelfAll"
+                    DockPanel.Dock="Right"
+                    CornerRadius="10"
+                    Padding="8,2"
+                    Cursor="Hand"
+                    Background="Transparent"
+                    ToolTip="Raftaki tüm dosyaları birlikte sürükle"
+                    MouseLeftButtonDown="Tile_MouseLeftButtonDown"
+                    MouseMove="Tile_MouseMove"
+                    MouseLeftButtonUp="Tile_MouseLeftButtonUp">
+                <TextBlock Text="Hepsini sürükle" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+            </Border>
+            <TextBlock Foreground="{StaticResource TextPrimary}" FontSize="13" VerticalAlignment="Center">
+                <Run Text="Dosya rafı" />
+                <Run x:Name="ShelfCount" Foreground="{StaticResource TextSecondary}" FontSize="12" />
+            </TextBlock>
+        </DockPanel>
+
+        <Border x:Name="ShelfZone" CornerRadius="10" Background="Transparent">
+            <Grid>
+                <!-- İki satır görünür, fazlası tekerlekle kayar: kart ekranı kaplamasın -->
+                <ScrollViewer x:Name="ShelfScroll"
+                              MaxHeight="172"
+                              Focusable="False"
+                              VerticalScrollBarVisibility="Hidden">
+                    <ItemsControl x:Name="ShelfList" Focusable="False" ItemTemplate="{StaticResource ShelfTemplate}" Margin="0,0,-8,-8">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Grid x:Name="ShelfEmpty" Height="64">
+                    <Rectangle RadiusX="10"
+                               RadiusY="10"
+                               Stroke="{StaticResource ShotStrokeHover}"
+                               StrokeDashArray="4 3" />
+                    <TextBlock Foreground="{StaticResource TextSecondary}"
+                               FontSize="12"
+                               Margin="16,0"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Text="Dosyaları buraya sürükle, götüreceğin yere kadar burada beklesin." />
+                </Grid>
+            </Grid>
+        </Border>
     </StackPanel>
 </UserControl>

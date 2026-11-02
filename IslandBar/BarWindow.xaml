@@ -633,6 +633,10 @@
                             MouseEnter="PanelButton_MouseEnter"
                             AutomationProperties.Name="IslandBar Araçları"
                             ToolTip="IslandBar Araçları"
+                            AllowDrop="True"
+                            DragEnter="ToolsButton_DragEnter"
+                            DragOver="GroupsButton_DragOver"
+                            Drop="ToolsButton_Drop"
                             Click="ToolsButton_Click">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
