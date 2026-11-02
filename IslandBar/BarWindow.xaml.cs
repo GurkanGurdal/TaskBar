@@ -173,6 +173,9 @@ public partial class BarWindow : AppBarWindow
     private TaskCompletionSource? _warmDone;
     private readonly NowPlayingWatcher? _nowPlaying;
     private bool _chipAtBarPlace;
+    private bool _volumeAtBarPlace;
+    private bool _glassWaitsForVolume;
+    private Point _volumePlace;
     private Point _chipPlace;
 
     private readonly IDisposable? _volumeWatcher;
@@ -268,6 +271,13 @@ public partial class BarWindow : AppBarWindow
         // Çubuk gizliyken de doğru yerde açılsın: düğme ekran dışında olabilir, pencere değil.
         StartPopup.PlacementTarget = this;
         ChipPopup.PlacementTarget = this;
+        VolumePopup.PlacementTarget = this;
+        VolumeCard.Dismissed += () =>
+        {
+            VolumePopup.IsOpen = false;
+            RefreshGlassAfterVolume();
+        };
+        VolumeCard.Slid += RefreshGlassAfterVolume;
         Chip.Dismissed += () => ChipPopup.IsOpen = false;
         Chip.Slid += () =>
         {
@@ -331,6 +341,7 @@ public partial class BarWindow : AppBarWindow
         IconSize = Math.Max(16, Math.Round(ButtonSize * 0.62));
         IsCompact = thickness < CompactThickness;
         Chip.SetThickness(thickness, IslandCornerRadius, IsCompact);
+        VolumeCard.SetThickness(thickness, IslandCornerRadius);
         double clockSize = Math.Clamp(Math.Round(ButtonSize * 0.58), 13, 26);
         ClockTime.SetValue(TextBlock.FontSizeProperty, clockSize);
         ClockDate.FontSize = Math.Clamp(Math.Round(ButtonSize * 0.32), 10, 13);
@@ -680,8 +691,12 @@ public partial class BarWindow : AppBarWindow
         {
             _islandWatch.Reset();
 
-            // Şarkı kartı adanın yerinde duruyorsa cama karışır; kart yerine kayınca alınır (Chip.Slid).
-            if (!ChipPopup.IsOpen)
+            // Şarkı kartı ya da ses göstergesi adanın yerinde duruyorsa cama karışır; kart yerine kayınca alınır (Slid).
+            if (VolumePopup.IsOpen)
+            {
+                _glassWaitsForVolume = true;
+            }
+            else if (!ChipPopup.IsOpen)
             {
                 RefreshGlass();
             }
@@ -772,6 +787,11 @@ public partial class BarWindow : AppBarWindow
         if (ChipPopup.IsOpen && !Chip.IsHiding && IsIslandOffScreen() != _chipAtBarPlace)
         {
             MoveChip();
+        }
+
+        if (VolumePopup.IsOpen && !VolumeCard.IsHiding && IsBarOutOfSight() != _volumeAtBarPlace)
+        {
+            MoveVolumeChip();
         }
 
         // Başlat kontrolü süreç adı okuyor, pencereleri dolaşmak da sistem çağrısı; imleç kadar sık gerekmiyor.
@@ -2592,7 +2612,7 @@ public partial class BarWindow : AppBarWindow
     private void NowPlaying_TrackStarted(NowPlayingTrack track)
     {
         // Açık kart varsa kalkmasın; Hızlı ayarlar şarkıyı zaten gösteriyor.
-        if (!_settings.ShowNowPlayingChip || _fullScreenOnThisBar || IsAnyPanelActive() || NowPlayingChip.IsUserBusy())
+        if (!_settings.ShowNowPlayingChip || _fullScreenOnThisBar || IsAnyPanelActive() || VolumePopup.IsOpen || NowPlayingChip.IsUserBusy())
         {
             return;
         }
@@ -2702,6 +2722,96 @@ public partial class BarWindow : AppBarWindow
         };
 
         _chipPlace = new Point(ChipPopup.HorizontalOffset + ChipRoot.Padding.Left, ChipPopup.VerticalOffset + ChipRoot.Padding.Top);
+    }
+    #endregion
+
+    #region Volume chip
+    /// <summary>Ses tuşuna basıldı. Hızlı ayarlar açıksa orada kendi kaydırıcısı oynuyor, kart üstüne çıkmaz.</summary>
+    internal void ShowVolume(AudioEndpoint audio)
+    {
+        if (HoldsBar(QuickPopup))
+        {
+            return;
+        }
+
+        // Şarkı kartıyla aynı yerde duruyor.
+        Chip.Dismiss();
+        VolumeCard.Present(audio);
+
+        if (!VolumePopup.IsOpen)
+        {
+            PlaceVolumeChip();
+            VolumePopup.IsOpen = true;
+        }
+    }
+
+    private async void VolumePopup_Opened(object? sender, EventArgs e)
+    {
+        await VolumeCard.RevealAsync(TowardBar());
+    }
+
+    /// <summary>Çubuk ekranda değil: gizli ya da tam ekran pencerenin arkasında.</summary>
+    private bool IsBarOutOfSight()
+    {
+        return IsIslandOffScreen() || _fullScreenOnThisBar;
+    }
+
+    private void MoveVolumeChip()
+    {
+        Point old = _volumePlace;
+        PlaceVolumeChip();
+        VolumeCard.SlideFrom(old - _volumePlace);
+    }
+
+    private void RefreshGlassAfterVolume()
+    {
+        if (_glassWaitsForVolume)
+        {
+            _glassWaitsForVolume = false;
+            if (!IsIslandOffScreen())
+            {
+                RefreshGlass();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Çubuk görünürken adanın hemen yanında, görünmezken adanın durduğu yerde; ikisinde de ekranın ortasında.
+    /// Popup iki yeri de kapsar ve yerinden oynamaz: kart arada kayarken pencerenin kenarında kesilmesin.
+    /// </summary>
+    private void PlaceVolumeChip()
+    {
+        _volumeAtBarPlace = IsBarOutOfSight();
+
+        var size = new Size(VolumeChip.CardWidth, _settings.Thickness);
+        double centerX = (ActualWidth - size.Width) / 2;
+        double centerY = (ActualHeight - size.Height) / 2;
+        (Point beside, Point atBar) = AppBarEdge switch
+        {
+            AppBarEdge.Top => (new Point(centerX, ActualHeight), new Point(centerX, FloatGap)),
+            AppBarEdge.Left => (new Point(ActualWidth, centerY), new Point(FloatGap, centerY)),
+            AppBarEdge.Right => (new Point(-size.Width, centerY), new Point(ActualWidth - FloatGap - size.Width, centerY)),
+            _ => (new Point(centerX, -size.Height), new Point(centerX, ActualHeight - FloatGap - size.Height))
+        };
+
+        // Popup ekran dışına taşamaz: kenar tarafında gölge payı olursa kart itilirdi.
+        var area = Rect.Union(new Rect(beside, size), new Rect(atBar, size));
+        area.Inflate(PanelShadowMargin, PanelShadowMargin);
+        area.Intersect(AppBarEdge switch
+        {
+            AppBarEdge.Top => new Rect(area.X, 0, area.Width, area.Height),
+            AppBarEdge.Left => new Rect(0, area.Y, area.Width, area.Height),
+            AppBarEdge.Right => new Rect(area.X, area.Y, ActualWidth - area.X, area.Height),
+            _ => new Rect(area.X, area.Y, area.Width, ActualHeight - area.Y)
+        });
+
+        VolumePopup.Width = area.Width;
+        VolumePopup.Height = area.Height;
+        VolumePopup.HorizontalOffset = area.X;
+        VolumePopup.VerticalOffset = area.Y;
+
+        _volumePlace = _volumeAtBarPlace ? atBar : beside;
+        VolumeCard.Margin = new Thickness(_volumePlace.X - area.X, _volumePlace.Y - area.Y, 0, 0);
     }
     #endregion
 

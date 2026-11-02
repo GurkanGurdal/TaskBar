@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
 using ManagedShell;
@@ -20,6 +21,7 @@ public partial class App : Application
     private readonly EventWaitHandle _showSettingsSignal;
     private readonly List<BarWindow> _bars = new();
     private WinKeyWatcher? _winKeyWatcher;
+    private VolumeKeyWatcher? _volumeKeyWatcher;
     private readonly DispatcherTimer _displayChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private AppSettings? _settings;
     private SettingsWindow? _settingsWindow;
@@ -115,6 +117,7 @@ public partial class App : Application
         OpenBars();
 
         ApplyStartMenuMode();
+        ApplyVolumeChipMode();
 
         _displayChangeTimer.Tick += DisplayChangeTimer_Tick;
 
@@ -152,6 +155,10 @@ public partial class App : Application
         {
             ApplyStartMenuMode();
         }
+        else if (e.PropertyName == nameof(AppSettings.ShowVolumeChip))
+        {
+            ApplyVolumeChipMode();
+        }
         else if (e.PropertyName == nameof(AppSettings.Theme))
         {
             Dispatcher.BeginInvoke(() =>
@@ -184,6 +191,33 @@ public partial class App : Application
         {
             _winKeyWatcher = new WinKeyWatcher(() => Dispatcher.BeginInvoke(ToggleStartPanel));
             PrepareStartPanels();
+        }
+    }
+
+    private void ApplyVolumeChipMode()
+    {
+        _volumeKeyWatcher?.Dispose();
+        _volumeKeyWatcher = null;
+
+        if (_settings!.ShowVolumeChip)
+        {
+            _volumeKeyWatcher = new VolumeKeyWatcher(key => Dispatcher.BeginInvoke(() => VolumeKey_Pressed(key)));
+        }
+    }
+
+    private void VolumeKey_Pressed(VolumeKey key)
+    {
+        try
+        {
+            if (AudioEndpoint.TryOpen() is { } audio)
+            {
+                audio.Press(key);
+                _bars.FirstOrDefault(bar => bar.Screen.Primary)?.ShowVolume(audio);
+            }
+        }
+        catch (COMException)
+        {
+            // Aygıt tam bu sırada çıkarılmış olabilir; sonraki basışta varsayılan yeniden bulunur.
         }
     }
 

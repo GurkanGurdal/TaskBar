@@ -9,6 +9,7 @@ internal sealed class AudioEndpoint
     private const int Render = 0;
     private const int Multimedia = 1;
     private const int ClsctxAll = 23;
+    private const int KeySteps = 50;
     private static readonly Guid VolumeInterface = new("5CDF2C82-841E-4546-9722-0CF74078229A");
 
     private readonly IAudioEndpointVolume _volume;
@@ -37,6 +38,32 @@ internal sealed class AudioEndpoint
             return muted;
         }
         set => Marshal.ThrowExceptionForHR(_volume.SetMute(value, Guid.Empty));
+    }
+
+    /// <summary>
+    /// Ses tuşunun yaptığı iş, Windows'tan ölçüldü: düzey 50 adımlık ızgaraya yuvarlanıp bir adım gider (%33 yukarı %36,
+    /// aşağı %32), yukarı sessizden çıkarır, aşağı çıkarmaz, sıfıra inmek sessize alır.
+    /// </summary>
+    public void Press(VolumeKey key)
+    {
+        if (key == VolumeKey.Mute)
+        {
+            Muted = !Muted;
+            return;
+        }
+
+        int direction = key == VolumeKey.Up ? 1 : -1;
+        float level = Math.Clamp((MathF.Round(Level * KeySteps, MidpointRounding.AwayFromZero) + direction) / KeySteps, 0, 1);
+        Level = level;
+
+        if (key == VolumeKey.Up)
+        {
+            Muted = false;
+        }
+        else if (level <= 0)
+        {
+            Muted = true;
+        }
     }
 
     public static AudioEndpoint? TryOpen()

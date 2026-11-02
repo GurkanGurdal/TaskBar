@@ -1,0 +1,51 @@
+<UserControl x:Class="IslandBar.VolumeChip"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:IslandBar"
+             FontFamily="{StaticResource UiFont}"
+             IsHitTestVisible="False">
+    <local:GlassCard x:Name="Card"
+                     AllowDrop="False"
+                     Width="{x:Static local:VolumeChip.CardWidth}"
+                     Padding="14,0">
+        <local:GlassCard.RenderTransform>
+            <TranslateTransform x:Name="Slide" />
+        </local:GlassCard.RenderTransform>
+        <Grid VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <local:VolumeIcon x:Name="Glyph"
+                              VerticalAlignment="Center"
+                              TextElement.FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                              TextElement.FontSize="15"
+                              TextElement.Foreground="{StaticResource TextPrimary}" />
+
+            <Border x:Name="Track"
+                    Grid.Column="1"
+                    Margin="12,0"
+                    Height="4"
+                    CornerRadius="2"
+                    VerticalAlignment="Center"
+                    Background="{StaticResource RailTrack}">
+                <Border x:Name="Fill"
+                        CornerRadius="2"
+                        HorizontalAlignment="Left"
+                        Background="{StaticResource AccentFill}" />
+            </Border>
+
+            <!-- Üç hane için yer hep ayrılı: düzey değişince çizgi oynamasın -->
+            <TextBlock x:Name="Number"
+                       Grid.Column="2"
+                       MinWidth="24"
+                       TextAlignment="Right"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimary}" />
+        </Grid>
+    </local:GlassCard>
+</UserControl>

@@ -33,6 +33,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _customStartMenu = true;
     private bool _clockChipOnDesktop = true;
     private bool _showNowPlayingChip = true;
+    private bool _showVolumeChip = true;
     private bool _keepScreenshots = true;
     private BarTheme _theme = BarTheme.Glass;
 
@@ -107,6 +108,13 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _showNowPlayingChip;
         set => SetField(ref _showNowPlayingChip, value);
+    }
+
+    /// <summary>Ses tuşlarında Windows'un göstergesi yerine çubuğun kartı; kapalıyken tuşlara hiç karışılmaz.</summary>
+    public bool ShowVolumeChip
+    {
+        get => _showVolumeChip;
+        set => SetField(ref _showVolumeChip, value);
     }
 
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();

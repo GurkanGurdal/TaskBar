@@ -926,6 +926,17 @@
             </Border>
         </Popup>
 
+        <!-- Ses tuşlarının göstergesi: yerini PlaceVolumeChip belirler -->
+        <Popup x:Name="VolumePopup"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               Placement="Relative"
+               Opened="VolumePopup_Opened">
+            <Grid>
+                <local:VolumeChip x:Name="VolumeCard" HorizontalAlignment="Left" VerticalAlignment="Top" />
+            </Grid>
+        </Popup>
+
         <!-- Diğer tepsi ikonları: pil dışındakiler burada toplanır -->
         <Popup x:Name="TrayPopup"
                StaysOpen="True"
