@@ -76,6 +76,12 @@ public partial class NowPlayingChip : UserControl
     private const double CompactArtistMaxWidth = 140;
     private const double CompactArtistGap = 8;
 
+    // Onay noktasının halkaları: iki halka yarım tur arayla, kart görünür kaldıkça.
+    private const int RingPeriodMs = 1400;
+    private const double RingScale = 3.2;
+    private const double RingStartOpacity = 0.9;
+    private const int RingFrameRate = 30;
+
     /// <summary>Birbirini tutmayan süreler: çubuklar aynı anda inip kalkmasın.</summary>
     private static readonly int[] BarPeriodsMs = { 430, 310, 520 };
 
@@ -176,6 +182,45 @@ public partial class NowPlayingChip : UserControl
         DoneMark.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
         WaitMark.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
         SetKind(claude: true);
+        if (IsShown)
+        {
+            UpdateRings();
+        }
+    }
+
+    /// <summary>Halkalar yalnızca onay beklerken ve kart ekrandayken döner.</summary>
+    private void UpdateRings()
+    {
+        if (IsShown && IsClaude && WaitMark.Visibility == Visibility.Visible && SystemParameters.ClientAreaAnimation)
+        {
+            StartRing(WaitRing1, RingScale1, 0);
+            StartRing(WaitRing2, RingScale2, RingPeriodMs / 2);
+        }
+        else
+        {
+            StopRing(WaitRing1, RingScale1);
+            StopRing(WaitRing2, RingScale2);
+        }
+    }
+
+    private static void StartRing(UIElement ring, ScaleTransform scale, int delayMs)
+    {
+        var duration = TimeSpan.FromMilliseconds(RingPeriodMs);
+        var begin = TimeSpan.FromMilliseconds(delayMs);
+        var grow = new DoubleAnimation(1, RingScale, duration) { BeginTime = begin, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+        var fade = new DoubleAnimation(RingStartOpacity, 0, duration) { BeginTime = begin, RepeatBehavior = RepeatBehavior.Forever };
+        Timeline.SetDesiredFrameRate(grow, RingFrameRate);
+        Timeline.SetDesiredFrameRate(fade, RingFrameRate);
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+        ring.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private static void StopRing(UIElement ring, ScaleTransform scale)
+    {
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        ring.BeginAnimation(OpacityProperty, null);
     }
 
     /// <summary>Açık kart kip değiştirirse çubuklar da durur ya da başlar.</summary>
@@ -193,6 +238,7 @@ public partial class NowPlayingChip : UserControl
         {
             StartBars();
         }
+        UpdateRings();
     }
 
     /// <summary>Kapak şarkıdan sonra gelebildiği için ayrı güncellenir.</summary>
@@ -228,6 +274,7 @@ public partial class NowPlayingChip : UserControl
         {
             StartBars();
         }
+        UpdateRings();
         RestartDismiss(ShowSeconds);
 
         if (!SystemParameters.ClientAreaAnimation)
@@ -324,6 +371,7 @@ public partial class NowPlayingChip : UserControl
     {
         IsShown = false;
         StopBars();
+        UpdateRings();
         StopMotion();
         SetRest();
         CardSlide.BeginAnimation(TranslateTransform.XProperty, null);

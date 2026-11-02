@@ -114,12 +114,20 @@
                            VerticalAlignment="Center"
                            Foreground="{StaticResource TextSecondary}"
                            Text="&#xE73E;" />
-                <Ellipse x:Name="WaitMark"
-                         Width="8"
-                         Height="8"
-                         VerticalAlignment="Center"
-                         Fill="{StaticResource AttentionFill}"
-                         Visibility="Collapsed" />
+                <!-- Onay beklerken noktadan sonar gibi halkalar yayılır (kullanıcının seçimi) -->
+                <Grid x:Name="WaitMark" Width="8" Height="8" VerticalAlignment="Center" Visibility="Collapsed">
+                    <Ellipse Stroke="{StaticResource AttentionFill}" StrokeThickness="1.2" Opacity="0" RenderTransformOrigin="0.5,0.5" x:Name="WaitRing1">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="RingScale1" />
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Ellipse Stroke="{StaticResource AttentionFill}" StrokeThickness="1.2" Opacity="0" RenderTransformOrigin="0.5,0.5" x:Name="WaitRing2">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="RingScale2" />
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Ellipse Fill="{StaticResource AttentionFill}" />
+                </Grid>
             </Grid>
         </Grid>
     </local:GlassCard>

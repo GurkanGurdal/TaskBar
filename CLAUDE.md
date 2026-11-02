@@ -54,8 +54,8 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   `Pulse` ile (otomatik gizlemenin açılmama sorunu buydu).
 
 ## Kullanıcının tercihleri ve reddettikleri (yeniden önerme)
-- Genel: gradyan, parıltı, neon, mavi-mor geçiş yok; renk yalnızca anlam taşıyan yerde. Sürekli animasyon yok,
-  hareket yalnızca durum değişince. Solmalı geçiş yerine kayma. Tam yuvarlak hap çubuk/kart yok. İki ada yok.
+- Genel: gradyan, parıltı, neon, mavi-mor geçiş yok; renk yalnızca anlam taşıyan yerde. Sürekli animasyon yasak
+  değil (eski "sürekli animasyon yok" notu yanlıştı, kullanıcı öyle demedi). Solmalı geçiş yerine kayma. Tam yuvarlak hap çubuk/kart yok. İki ada yok.
   Otomatik gizlemede kenarda iz bırakma.
 - Saat: süs yok (güneş/ay kadranı reddedildi), LED nokta matrisi reddedildi, yan yana tarih yok (üzerine gelince),
   eşit genişlik rakam kullanma.
