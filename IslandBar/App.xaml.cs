@@ -106,6 +106,7 @@ public partial class App : Application
         // Ekran değişince tüm çubuklar kapatılıp yeniden açılıyor; bu sırada uygulama kapanmamalı.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        UiStallWatch.Attach(Dispatcher);
         GlassCard.AttachToPopups();
         _settings = AppSettings.Load();
         ThemeManager.Apply(_settings.Theme);

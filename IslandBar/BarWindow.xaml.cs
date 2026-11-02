@@ -99,6 +99,12 @@ public partial class BarWindow : AppBarWindow
     private const double CompactThickness = 36;
     private const double EdgeRevealDepth = 2;
 
+    /// <summary>İmleç kenarda bu kadar kaldığı hâlde ada görünmüyorsa durum kayda yazılır.</summary>
+    private const int StuckRevealMs = 600;
+
+    /// <summary>70 ms'lik dürtü bundan geç gelirse arayüz donmuştur, kenar o sırada izlenmez.</summary>
+    private const int SlowTickMs = 400;
+
     private static readonly int TaskbarCreatedMessage = NativeMethods.RegisterWindowMessage("TaskbarCreated");
     private static readonly Guid BatteryIconGuid = new(NotificationArea.POWER_GUID);
 
@@ -191,7 +197,8 @@ public partial class BarWindow : AppBarWindow
     private readonly GroupRunTracker? _runTracker;
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _clockMinute;
-    private readonly DispatcherTimer _autoHideTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
+    private const int AutoHideIntervalMs = 70;
+    private Pulse? _autoHidePulse;
     private int _autoHideTicks;
     private readonly DispatcherTimer _glassTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private WriteableBitmap? _glassBitmap;
@@ -204,6 +211,9 @@ public partial class BarWindow : AppBarWindow
     private readonly SolidColorBrush _tintBrush = new(GlassTint.Rest);
     private Color _tintTarget = GlassTint.Rest;
     private bool _fullScreenOnThisBar;
+    private long _edgeSince;
+    private bool _stuckLogged;
+    private long _lastAutoHideTick;
     private bool _cursorInBarZone;
     private bool _desktopClear;
     private bool _clockChipTarget;
@@ -323,8 +333,7 @@ public partial class BarWindow : AppBarWindow
         {
             // Adalar tamamen ekran dışına kayar; fareyi konumundan takip ediyoruz, kenarda iz kalmaz.
             AutoHideShowMargin = 0;
-            _autoHideTimer.Tick += AutoHideTimer_Tick;
-            _autoHideTimer.Start();
+            _autoHidePulse = new Pulse(Dispatcher, AutoHideIntervalMs, AutoHideTick);
 
             _clockChipFades = Screen.Primary
                 ? [LauncherSection, LauncherDivider, TaskList, SystemDivider, TrayOverflowButton, QuickButton]
@@ -717,6 +726,8 @@ public partial class BarWindow : AppBarWindow
 
         // Temel sınıf bazı pencereleri tam ekran saymıyor; gerçekten geri çekildiyse görüntü almayı bırak.
         _fullScreenOnThisBar = !Topmost;
+        AutoHideLog.Write($"{Screen.DeviceName} tam ekran başladı: '{app.title}' {app.rect.Left},{app.rect.Top}-{app.rect.Right},{app.rect.Bottom} " +
+            $"kaynak={(app.fromTasksService ? "Windows" : "boyut")} çubuk geri çekildi={_fullScreenOnThisBar}");
         if (_fullScreenOnThisBar)
         {
             Chip.Dismiss();
@@ -728,6 +739,7 @@ public partial class BarWindow : AppBarWindow
         base.OnFullScreenLeave();
 
         _fullScreenOnThisBar = false;
+        AutoHideLog.Write($"{Screen.DeviceName} tam ekran bitti");
     }
     #endregion
 
@@ -794,9 +806,10 @@ public partial class BarWindow : AppBarWindow
         return popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : popup == ToolsPopup ? ToolsCard : popup == CalendarPopup ? CalendarCard : PreviewCard;
     }
 
-    private void AutoHideTimer_Tick(object? sender, EventArgs e)
+    private void AutoHideTick()
     {
         bool changed = UpdateCursorZone();
+        WatchStuckReveal();
 
         if (ChipPopup.IsOpen && !Chip.IsHiding && IsIslandOffScreen() != _chipAtBarPlace)
         {
@@ -835,6 +848,110 @@ public partial class BarWindow : AppBarWindow
             OnPropertyChanged(nameof(AllowAutoHide));
         }
     }
+
+    /// <summary>
+    /// Tanı: kullanıcı imleci kenara götürünce çubuğun bazen açılmadığını bildirdi (Windows'un çubuğunda da). İlk kayıt
+    /// tam ekranı da takılmayı da göstermedi; bu yüzden imleç ham konumdan kenarda sayılır ve adanın yerinde gerçekten ne
+    /// göründüğüne bakılır. 600 ms sonra ada görünmüyorsa o anki durum bir kez yazılır. Arayüz donup zamanlayıcı
+    /// geciktiyse o da yazılır.
+    /// </summary>
+    private void WatchStuckReveal()
+    {
+        long now = Environment.TickCount64;
+        long gap = _lastAutoHideTick == 0 ? 0 : now - _lastAutoHideTick;
+        _lastAutoHideTick = now;
+        if (gap >= SlowTickMs)
+        {
+            AutoHideLog.Write($"{Screen.DeviceName} dürtü {gap} ms gecikti");
+        }
+
+        System.Drawing.Point cursor = System.Windows.Forms.Cursor.Position;
+        System.Drawing.Rectangle bounds = Screen.Bounds;
+        int edge = (int)EdgeRevealDepth;
+        bool atEdge = bounds.Contains(cursor) && AppBarEdge switch
+        {
+            AppBarEdge.Top => cursor.Y < bounds.Top + edge,
+            AppBarEdge.Left => cursor.X < bounds.Left + edge,
+            AppBarEdge.Right => cursor.X >= bounds.Right - edge,
+            _ => cursor.Y >= bounds.Bottom - edge
+        };
+        if (!atEdge)
+        {
+            _edgeSince = 0;
+            _stuckLogged = false;
+            return;
+        }
+
+        if (_edgeSince == 0)
+        {
+            _edgeSince = now;
+            return;
+        }
+        if (_stuckLogged || now - _edgeSince < StuckRevealMs)
+        {
+            return;
+        }
+
+        var slide = (TranslateTransform)BarRoot.RenderTransform;
+        string atIsland = "?";
+        bool ours = false;
+        if (TryGetIslandRestRect(out System.Drawing.Rectangle island))
+        {
+            IntPtr hit = GetAncestor(WindowFromPoint(new NativePoint { X = island.X + island.Width / 2, Y = island.Y + island.Height / 2 }), RootAncestor);
+            NativeMethods.GetWindowThreadProcessId(hit, out uint hitProcess);
+            ours = hitProcess == Environment.ProcessId;
+            atIsland = $"'{WindowTitle(hit)}' ({ProcessName(hitProcess)})";
+        }
+        if (ours && Math.Abs(slide.X) < 1 && Math.Abs(slide.Y) < 1)
+        {
+            return;
+        }
+
+        _stuckLogged = true;
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        NativeMethods.GetWindowThreadProcessId(foreground, out uint foregroundProcess);
+        AutoHideLog.Write($"{Screen.DeviceName} açılmadı: imleç {cursor} ekran {bounds} bölgede={_cursorInBarZone} kayma={slide.X:0},{slide.Y:0} " +
+            $"en üstte={Topmost} tam ekran={_fullScreenOnThisBar} gizlenebilir={AllowAutoHide} kart açık={IsAnyPanelActive()} saat çipi={ClockChipProgress:0.##} " +
+            $"fare basılı={Mouse.LeftButton == MouseButtonState.Pressed} adanın yerinde={atIsland} öndeki='{WindowTitle(foreground)}' ({ProcessName(foregroundProcess)})");
+    }
+
+    private static string ProcessName(uint processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById((int)processId);
+            return process.ProcessName;
+        }
+        catch (ArgumentException)
+        {
+            return "?";
+        }
+    }
+
+    private static string WindowTitle(IntPtr window)
+    {
+        var text = new System.Text.StringBuilder(256);
+        GetWindowText(window, text, text.Capacity);
+        return text.ToString();
+    }
+
+    private const uint RootAncestor = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32")]
+    private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int length);
 
     /// <summary>Çubuk bir uygulamanın üstünde durmuyor mu? Masaüstü bileşenleri görev çubuğu penceresi olmadığı için sayılmaz.</summary>
     private bool IsDesktopClear()
@@ -1615,7 +1732,7 @@ public partial class BarWindow : AppBarWindow
         _stage.Dispose();
         _nowPlaying?.Dispose();
         _clockTimer.Stop();
-        _autoHideTimer.Stop();
+        _autoHidePulse?.Dispose();
         _glassTimer.Stop();
 
         _previewShowTimer.Stop();
