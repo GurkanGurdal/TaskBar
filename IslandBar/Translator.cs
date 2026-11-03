@@ -9,7 +9,10 @@ namespace IslandBar;
 /// <summary>Bir çeviri: metin ve dil yönü; çevrilemediyse <see cref="Problem"/> kullanıcıya söylenecek neden.</summary>
 public sealed record Translation(string Text, string From, string To, string? Problem = null)
 {
-    public string Direction => $"{Translator.LanguageName(From)} → {Translator.LanguageName(To)}";
+    /// <summary>Seçim <see cref="Translator.MaxLength"/> karakteri geçti, başı çevrildi.</summary>
+    public bool Cut { get; init; }
+
+    public string Direction => $"{Translator.LanguageName(From)} → {Translator.LanguageName(To)}" + (Cut ? $" · ilk {Translator.MaxLength} karakter" : "");
 
     public static Translation Failed(string problem) => new("", "", "", problem);
 }
@@ -22,8 +25,11 @@ public sealed record Translation(string Text, string From, string To, string? Pr
 /// </summary>
 public static class Translator
 {
-    /// <summary>Günlük sınır küçük: daha uzun seçimin başı çevrilir.</summary>
-    public const int MaxLength = 1000;
+    /// <summary>
+    /// Balona sığan kadar (kullanıcının isteği: kaydırma yerine sınır). Sürüklerken sayaç gösterir, fazlası seçilirse
+    /// başı çevrilir.
+    /// </summary>
+    public const int MaxLength = 300;
 
     private const string Endpoint = "https://api.mymemory.translated.net/get";
     private const int MaxChunkBytes = 450;
@@ -72,7 +78,8 @@ public static class Translator
 
     public static async Task<Translation> TranslateAsync(string text, CancellationToken cancel)
     {
-        if (text.Length > MaxLength)
+        bool cut = text.Length > MaxLength;
+        if (cut)
         {
             text = text[..MaxLength];
         }
@@ -87,7 +94,7 @@ public static class Translator
                 if (reply.SameLanguage && to == "tr")
                 {
                     // Kaynak Türkçe: baştan İngilizceye.
-                    return await TranslateAsync(text, "tr", "en", cancel);
+                    return await TranslateAsync(text, "tr", "en", cancel) with { Cut = cut };
                 }
                 if (reply.Problem != null)
                 {
@@ -97,7 +104,7 @@ public static class Translator
                 from = reply.Detected ?? from;
                 result.Append(result.Length > 0 ? " " : "").Append(reply.Text);
             }
-            return new Translation(result.ToString(), from, to);
+            return new Translation(result.ToString(), from, to) { Cut = cut };
         }
         catch (Exception e) when (e is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException
             || e is TaskCanceledException && !cancel.IsCancellationRequested)

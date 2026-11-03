@@ -72,8 +72,6 @@ internal sealed class TranslationBubble : Window
             FontSize = 14,
             LineHeight = 20,
             TextWrapping = TextWrapping.Wrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxHeight = 20 * 14,
             Margin = new Thickness(0, 0, 4, 0),
             Foreground = (Brush)Application.Current.FindResource("TextPrimary")
         };

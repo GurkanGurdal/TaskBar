@@ -27,9 +27,11 @@ internal static class SelectionReader
         "CabinetWClass", "ExploreWClass", "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"
     ];
 
-    public static async Task<SelectedText?> ReadAsync(IntPtr window)
+    /// <param name="at">Seçimin başladığı ya da bittiği yer, ekran pikseli.</param>
+    public static async Task<SelectedText?> ReadAsync(IntPtr window, System.Drawing.Point at)
     {
-        Task<SelectedText?> automation = Task.Run(FromAutomation);
+        // Bir fazlası: sınırı geçtiği anlaşılsın ("ilk 300 karakter").
+        Task<SelectedText?> automation = Task.Run(() => FromAutomation(at, Translator.MaxLength + 1, withBounds: true));
         if (await Task.WhenAny(automation, Task.Delay(AutomationTimeoutMs)) == automation && automation.Result is { } selected)
         {
             return selected;
@@ -38,33 +40,78 @@ internal static class SelectionReader
         return await FromCopyAsync(window);
     }
 
-    private static SelectedText? FromAutomation()
+    /// <summary>
+    /// Sürüklerken sayaç için seçimin uzunluğu, yalnızca UI Automation'dan (panoya dokunulmaz); okunamazsa null.
+    /// <paramref name="limit"/> karakterden fazlası okunmaz.
+    /// </summary>
+    /// <param name="at">Sürüklemenin başladığı yer, ekran pikseli.</param>
+    public static int? CountSelected(System.Drawing.Point at, int limit)
+    {
+        return FromAutomation(at, limit, withBounds: false)?.Text.Length;
+    }
+
+    /// <summary>
+    /// Seçim önce basılan yerdeki yazı öğesinden okunur, olmazsa odaktaki öğeden: Claude gibi uygulamalarda mesajdaki
+    /// yazı seçilirken odak yazma kutusunda kalıyor, odaktan okunan seçim boş geliyordu.
+    /// </summary>
+    private static SelectedText? FromAutomation(System.Drawing.Point? at, int limit, bool withBounds)
     {
         try
         {
-            AutomationElement? focused = AutomationElement.FocusedElement;
-            if (focused == null || focused.Current.ProcessId == Environment.ProcessId
-                || !focused.TryGetCurrentPattern(TextPattern.Pattern, out object pattern))
+            foreach (TextPattern pattern in Patterns(at))
             {
-                return null;
-            }
-
-            var text = new StringBuilder();
-            Rect? bounds = null;
-            foreach (TextPatternRange range in ((TextPattern)pattern).GetSelection())
-            {
-                text.Append(range.GetText(Translator.MaxLength - text.Length));
-                foreach (Rect line in range.GetBoundingRectangles())
+                var text = new StringBuilder();
+                Rect? bounds = null;
+                foreach (TextPatternRange range in pattern.GetSelection())
                 {
-                    bounds = bounds is { } union ? Rect.Union(union, line) : line;
+                    text.Append(range.GetText(Math.Max(0, limit - text.Length)));
+                    if (withBounds)
+                    {
+                        foreach (Rect line in range.GetBoundingRectangles())
+                        {
+                            bounds = bounds is { } union ? Rect.Union(union, line) : line;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(text.ToString()))
+                {
+                    return new SelectedText(text.ToString(), bounds);
                 }
             }
-
-            return string.IsNullOrWhiteSpace(text.ToString()) ? null : new SelectedText(text.ToString(), bounds);
+            return null;
         }
         catch (Exception e) when (e is ElementNotAvailableException or InvalidOperationException or COMException or ArgumentException)
         {
             return null;
+        }
+    }
+
+    /// <summary>Noktadaki öğeden yukarı ilk metin kalıbı, sonra odaktaki öğeninki; IslandBar'ın kendi pencereleri hariç.</summary>
+    private static IEnumerable<TextPattern> Patterns(System.Drawing.Point? at)
+    {
+        const int maxParentSteps = 8;
+        if (at is { } point && AutomationElement.FromPoint(new Point(point.X, point.Y)) is { } element)
+        {
+            for (int step = 0; element != null && step < maxParentSteps; step++)
+            {
+                if (element.Current.ProcessId == Environment.ProcessId)
+                {
+                    break;
+                }
+                if (element.TryGetCurrentPattern(TextPattern.Pattern, out object pattern))
+                {
+                    yield return (TextPattern)pattern;
+                    break;
+                }
+                element = TreeWalker.ControlViewWalker.GetParent(element);
+            }
+        }
+
+        if (AutomationElement.FocusedElement is { } focused && focused.Current.ProcessId != Environment.ProcessId
+            && focused.TryGetCurrentPattern(TextPattern.Pattern, out object focusedPattern))
+        {
+            yield return (TextPattern)focusedPattern;
         }
     }
 

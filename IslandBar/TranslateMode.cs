@@ -9,17 +9,22 @@ namespace IslandBar;
 /// çift ya da üç tıkla) çevrilir, seçimin altında balon açılır. Kullanıcı kapatana kadar açık kalır (kullanıcının
 /// seçimi); açık olduğunu şarkı kartının yerindeki "Çeviri modu" kartı gösterir, onun Kapat düğmesi ya da tekerlekteki
 /// dilim kapatır.
+/// Sürüklerken seçimin başında sayaç (<see cref="SelectionCounter"/>, kullanıcının seçimi): en çok 300 karakter çevrilir.
 /// Pencere sürüklenip taşındıysa seçim sayılmaz. Uygulama yeniden başlayınca kapalı başlar.
 /// </summary>
 internal sealed class TranslateMode
 {
     private const int ReadDelayMs = 60;
     private const int DragDistance = 5;
+    private const int CountIntervalMs = 120;
     private static readonly TimeSpan HintDuration = TimeSpan.FromSeconds(2.5);
 
     private readonly Dispatcher _dispatcher = Application.Current.Dispatcher;
     private MouseHook? _hook;
     private TranslationBubble? _bubble;
+    private SelectionCounter? _counter;
+    private bool _pressed;
+    private bool _counting;
     private CancellationTokenSource? _pending;
     private System.Drawing.Point _downAt;
     private DateTime _downTime;
@@ -54,6 +59,9 @@ internal sealed class TranslateMode
         {
             _hook = new MouseHook("IslandBar.Translate", (message, point) => _dispatcher.BeginInvoke(() => Mouse_Event(message, point)));
             Translator.Warm();
+
+            // UI Automation'ın ilk çağrısı yarım saniyeyi geçiyor: sayaç ilk sürüklemede de hemen gelsin.
+            Task.Run(() => SelectionReader.CountSelected(System.Windows.Forms.Cursor.Position, 1));
         }
         else
         {
@@ -61,6 +69,8 @@ internal sealed class TranslateMode
             _hook = null;
             _pending?.Cancel();
             _bubble?.Dismiss();
+            _pressed = false;
+            HideCounter();
         }
         Changed?.Invoke(on);
     }
@@ -73,6 +83,15 @@ internal sealed class TranslateMode
         }
 
         bool inBubble = _bubble?.Contains(point) == true;
+        if (message == MouseHook.Move)
+        {
+            if (_pressed && !_counting && (Math.Abs(point.X - _downAt.X) > DragDistance || Math.Abs(point.Y - _downAt.Y) > DragDistance))
+            {
+                CountSelection(_downAt);
+            }
+            return;
+        }
+
         if (message != MouseHook.LeftUp && !inBubble)
         {
             _pending?.Cancel();
@@ -88,10 +107,18 @@ internal sealed class TranslateMode
             _clicks = repeat ? _clicks + 1 : 1;
             _downAt = point;
             _downTime = DateTime.UtcNow;
+            _pressed = true;
+            HideCounter();
             _downWindow = GetAncestor(WindowFromPoint(point), RootWindow);
             GetWindowRect(_downWindow, out _downWindowRect);
         }
-        else if (message == MouseHook.LeftUp && !inBubble && _downWindow != IntPtr.Zero)
+        else if (message == MouseHook.LeftUp)
+        {
+            _pressed = false;
+            HideCounter();
+        }
+
+        if (message == MouseHook.LeftUp && !inBubble && _downWindow != IntPtr.Zero)
         {
             bool dragged = Math.Abs(point.X - _downAt.X) > DragDistance || Math.Abs(point.Y - _downAt.Y) > DragDistance;
             if ((dragged || _clicks >= 2) && !IsOwnWindow(_downWindow) && GetWindowRect(_downWindow, out Rect32 now) && now.Equals(_downWindowRect))
@@ -99,6 +126,48 @@ internal sealed class TranslateMode
                 TranslateSelection(point);
             }
         }
+    }
+
+    /// <summary>Tuş basılı kaldıkça seçimin uzunluğu; okunamayan uygulamada sayaç çıkmaz.</summary>
+    private async void CountSelection(System.Drawing.Point start)
+    {
+        _counting = true;
+        try
+        {
+            while (_pressed && IsOn)
+            {
+                int? count = await Task.Run(() => SelectionReader.CountSelected(start, SelectionCounter.MaxShown));
+                if (!_pressed || !IsOn)
+                {
+                    break;
+                }
+
+                if (count > 0)
+                {
+                    if (_counter == null)
+                    {
+                        _counter = new SelectionCounter(start);
+                        _counter.Update(count.Value);
+                        _counter.Show();
+                    }
+                    else
+                    {
+                        _counter.Update(count.Value);
+                    }
+                }
+                await Task.Delay(CountIntervalMs);
+            }
+        }
+        finally
+        {
+            _counting = false;
+        }
+    }
+
+    private void HideCounter()
+    {
+        _counter?.Dismiss();
+        _counter = null;
     }
 
     private async void TranslateSelection(System.Drawing.Point cursor)
@@ -111,7 +180,7 @@ internal sealed class TranslateMode
         {
             // Uygulama seçimi bırakılan tuşla bitiriyor.
             await Task.Delay(ReadDelayMs, pending.Token);
-            if (await SelectionReader.ReadAsync(GetForegroundWindow()) is not { } selected || !selected.Text.Any(char.IsLetter))
+            if (await SelectionReader.ReadAsync(GetForegroundWindow(), _downAt) is not { } selected || !selected.Text.Any(char.IsLetter))
             {
                 return;
             }
