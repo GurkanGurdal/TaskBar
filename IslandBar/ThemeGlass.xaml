@@ -36,6 +36,9 @@
         <GradientStop Color="#F0A93C" Offset="1" />
     </LinearGradientBrush>
     <SolidColorBrush x:Key="AttentionFill" Color="#FFB84D" />
+    <!-- Kamera / mikrofon kullanımda (iPhone gibi: kamera yeşil, mikrofon turuncu) -->
+    <SolidColorBrush x:Key="CameraFill" Color="#4ADE80" />
+    <SolidColorBrush x:Key="MicrophoneFill" Color="#FFB84D" />
 
     <!-- Düğme ve kutu zeminleri -->
     <SolidColorBrush x:Key="SubtleFill" Color="#14FFFFFF" />

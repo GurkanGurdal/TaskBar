@@ -93,6 +93,58 @@ internal sealed class AudioEndpoint
         }
     }
 
+    /// <summary>
+    /// Mikrofondan o an ses alan süreçler: etkin kayıt aygıtlarındaki etkin ses oturumları. Kayıt defterindeki
+    /// kullanım kaydı bu Windows'ta güvenilmez (Claude'un mikrofonu hiç yazılmadı, ölçüldü); oturum doğrudan sorulur.
+    /// Herhangi bir iş parçacığından çağrılabilir.
+    /// </summary>
+    public static List<int> CaptureProcessIds()
+    {
+        const int capture = 1;
+        const int activeDevices = 1;
+        const int activeSession = 1;
+        var ids = new List<int>();
+        try
+        {
+            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+            if (enumerator.EnumAudioEndpoints(capture, activeDevices, out IMMDeviceCollection devices) != 0 || devices.GetCount(out uint count) != 0)
+            {
+                return ids;
+            }
+
+            Guid managerId = typeof(IAudioSessionManager2).GUID;
+            for (uint i = 0; i < count; i++)
+            {
+                if (devices.Item(i, out IMMDevice device) != 0
+                    || device.Activate(ref managerId, ClsctxAll, IntPtr.Zero, out object manager) != 0
+                    || ((IAudioSessionManager2)manager).GetSessionEnumerator(out IAudioSessionEnumerator sessions) != 0
+                    || sessions.GetCount(out int sessionCount) != 0)
+                {
+                    continue;
+                }
+
+                for (int s = 0; s < sessionCount; s++)
+                {
+                    if (sessions.GetSession(s, out object session) == 0
+                        && session is IAudioSessionControl2 control
+                        && control.GetState(out int state) == 0 && state == activeSession
+                        && control.GetProcessId(out uint processId) == 0 && processId != 0)
+                    {
+                        ids.Add((int)processId);
+                    }
+                }
+            }
+        }
+        catch (COMException)
+        {
+            // Aygıt tam bu sırada çıkarılmış olabilir; sonraki yoklamada yeniden bakılır.
+        }
+        catch (InvalidCastException)
+        {
+        }
+        return ids;
+    }
+
     private static IAudioEndpointVolume? OpenVolume(IMMDeviceEnumerator enumerator)
     {
         if (enumerator.GetDefaultAudioEndpoint(Render, Multimedia, out IMMDevice device) != 0)
@@ -209,7 +261,7 @@ internal sealed class AudioEndpoint
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceEnumerator
     {
-        [PreserveSig] int EnumAudioEndpoints(int flow, int mask, out IntPtr devices);
+        [PreserveSig] int EnumAudioEndpoints(int flow, int mask, out IMMDeviceCollection devices);
         [PreserveSig] int GetDefaultAudioEndpoint(int flow, int role, out IMMDevice device);
         [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
         [PreserveSig] int RegisterEndpointNotificationCallback(IMMNotificationClient client);
@@ -220,6 +272,46 @@ internal sealed class AudioEndpoint
     private interface IMMDevice
     {
         [PreserveSig] int Activate(ref Guid iid, int context, IntPtr parameters, [MarshalAs(UnmanagedType.IUnknown)] out object instance);
+    }
+
+    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDeviceCollection
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int Item(uint index, out IMMDevice device);
+    }
+
+    [ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionManager2
+    {
+        [PreserveSig] int GetAudioSessionControl(IntPtr session, uint flags, out IntPtr control);
+        [PreserveSig] int GetSimpleAudioVolume(IntPtr session, uint flags, out IntPtr volume);
+        [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator sessions);
+    }
+
+    [ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionEnumerator
+    {
+        [PreserveSig] int GetCount(out int count);
+        [PreserveSig] int GetSession(int index, [MarshalAs(UnmanagedType.IUnknown)] out object session);
+    }
+
+    [ComImport, Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioSessionControl2
+    {
+        [PreserveSig] int GetState(out int state);
+        [PreserveSig] int GetDisplayName(out IntPtr name);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string name, [MarshalAs(UnmanagedType.LPStruct)] Guid context);
+        [PreserveSig] int GetIconPath(out IntPtr path);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string path, [MarshalAs(UnmanagedType.LPStruct)] Guid context);
+        [PreserveSig] int GetGroupingParam(out Guid grouping);
+        [PreserveSig] int SetGroupingParam([MarshalAs(UnmanagedType.LPStruct)] Guid grouping, [MarshalAs(UnmanagedType.LPStruct)] Guid context);
+        [PreserveSig] int RegisterAudioSessionNotification(IntPtr client);
+        [PreserveSig] int UnregisterAudioSessionNotification(IntPtr client);
+        [PreserveSig] int GetSessionIdentifier(out IntPtr id);
+        [PreserveSig] int GetSessionInstanceIdentifier(out IntPtr id);
+        [PreserveSig] int GetProcessId(out uint processId);
+        [PreserveSig] int IsSystemSoundsSession();
     }
 
     /// <summary>Yöntem sırası COM tablosuyla aynı olmalı; kullanılmayanlar yer tutar.</summary>

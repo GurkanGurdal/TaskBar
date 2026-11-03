@@ -94,6 +94,7 @@ public partial class NowPlayingChip : UserControl
     private double _leaveFromUnfurl = 1;
     private Vector _towardBar;
     private bool _isHiding;
+    private int _showSeconds = ShowSeconds;
 
     private enum Motion
     {
@@ -122,6 +123,12 @@ public partial class NowPlayingChip : UserControl
 
     /// <summary>Şarkı değil Claude kartı gösteriliyor.</summary>
     internal bool IsClaude { get; private set; }
+
+    /// <summary>Hatırlatıcı: kendi gitmez, başka kart onu ezmez.</summary>
+    internal bool IsSticky { get; private set; }
+
+    /// <summary>Hatırlatıcıda düğmeye basıldı: true Tamam, false Ertele. Kart ardından kendini kapatır.</summary>
+    public event Action<bool>? ActionChosen;
 
     public bool IsHiding => _isHiding;
 
@@ -160,6 +167,9 @@ public partial class NowPlayingChip : UserControl
     internal void SetTrack(NowPlayingTrack track)
     {
         AppId = track.AppId;
+        _showSeconds = ShowSeconds;
+        IsSticky = false;
+        NoticeActions.Visibility = Visibility.Collapsed;
         TitleText.Text = track.Title;
         ArtistText.Text = track.Artist;
         ArtistText.Foreground = (Brush)FindResource("TextSecondary");
@@ -173,8 +183,21 @@ public partial class NowPlayingChip : UserControl
     /// </summary>
     internal void SetClaude(ImageSource? icon, string project, string status, bool waiting)
     {
+        SetNotice(icon, "", project, status, waiting, ShowSeconds);
+    }
+
+    /// <summary>
+    /// Şarkı dışındaki bildirimler (Claude, süre doldu, hatırlatıcı) aynı kartla: üstte başlık, altta durum, sağda bitti
+    /// işareti ya da kehribar nokta. İkon yoksa <paramref name="glyph"/> çizilir.
+    /// </summary>
+    /// <param name="seconds">Kartın kalacağı süre; üzerine gelince bekler. 0: kullanıcı Ertele ya da Tamam diyene kadar.</param>
+    internal void SetNotice(ImageSource? icon, string glyph, string title, string status, bool waiting, int seconds)
+    {
         AppId = string.Empty;
-        TitleText.Text = project;
+        _showSeconds = seconds;
+        IsSticky = seconds == 0;
+        NoticeActions.Visibility = IsSticky ? Visibility.Visible : Visibility.Collapsed;
+        TitleText.Text = title;
         ArtistText.Text = status;
         ArtistText.Foreground = (Brush)FindResource(waiting ? "AttentionFill" : "TextSecondary");
         Cover.ImageSource = icon;
@@ -182,9 +205,17 @@ public partial class NowPlayingChip : UserControl
         DoneMark.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
         WaitMark.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
         SetKind(claude: true);
+        CoverGlyph.Text = glyph;
+
+        // Düğmeler işaretin yerinde.
+        if (IsSticky)
+        {
+            ClaudeMark.Visibility = Visibility.Collapsed;
+        }
         if (IsShown)
         {
             UpdateRings();
+            RestartDismiss(_showSeconds);
         }
     }
 
@@ -275,7 +306,7 @@ public partial class NowPlayingChip : UserControl
             StartBars();
         }
         UpdateRings();
-        RestartDismiss(ShowSeconds);
+        RestartDismiss(_showSeconds);
 
         if (!SystemParameters.ClientAreaAnimation)
         {
@@ -289,7 +320,7 @@ public partial class NowPlayingChip : UserControl
     /// <summary>Kart açıkken yeni şarkı geldi: süre baştan başlar.</summary>
     public void Renew()
     {
-        RestartDismiss(ShowSeconds);
+        RestartDismiss(_showSeconds);
 
         // Giderken yakalandıysa geri gelsin; hâlâ geliyorsa yazısı zaten sırada.
         _isHiding = false;
@@ -605,6 +636,11 @@ public partial class NowPlayingChip : UserControl
     private void RestartDismiss(int seconds)
     {
         _dismissTimer.Stop();
+        if (IsSticky)
+        {
+            return;
+        }
+
         _dismissTimer.Interval = TimeSpan.FromSeconds(seconds);
         _dismissTimer.Start();
     }
@@ -634,6 +670,13 @@ public partial class NowPlayingChip : UserControl
     private void Chip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
+
+        // Hatırlatıcı yalnızca düğmeyle kapanır: yanlışlıkla dokunmak onu kaybettirmesin.
+        if (IsSticky)
+        {
+            return;
+        }
+
         Clicked?.Invoke();
         Dismiss();
     }
@@ -642,6 +685,26 @@ public partial class NowPlayingChip : UserControl
     {
         // Olay mantıksal ağaçtan çubuğa çıkıp onun menüsünü açmasın; sağ tık yalnızca kapatır.
         e.Handled = true;
+        if (!IsSticky)
+        {
+            Dismiss();
+        }
+    }
+
+    private void Snooze_Click(object sender, RoutedEventArgs e)
+    {
+        Choose(done: false);
+    }
+
+    private void Done_Click(object sender, RoutedEventArgs e)
+    {
+        Choose(done: true);
+    }
+
+    private void Choose(bool done)
+    {
+        IsSticky = false;
+        ActionChosen?.Invoke(done);
         Dismiss();
     }
 

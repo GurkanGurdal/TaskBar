@@ -25,6 +25,7 @@ public partial class ToolsPanel : UserControl
     private const double ShelfGhostSize = 56;
     private const double TextGhostWidth = 220;
     private const double TextGhostHeight = 34;
+    private const string ShotHintText = "Sürükleyip istediğin yere bırak. Tıklayınca açılır.";
 
     private readonly ScreenshotHistory _history = ScreenshotHistory.Shared;
     private readonly ClipboardHistory _copied = ClipboardHistory.Shared;
@@ -52,6 +53,8 @@ public partial class ToolsPanel : UserControl
         // Liste uygulama boyunca yaşıyor, çubuklar ekran değişince yeniden açılıyor: kapanan kart listeye bağlı kalmasın.
         Loaded += (_, _) =>
         {
+            FocusTimer.Shared.Changed += UpdateTimerState;
+            UpdateTimerState();
             _history.Items.CollectionChanged += Items_CollectionChanged;
             _copied.Items.CollectionChanged += Items_CollectionChanged;
             _shelf.Items.CollectionChanged += Items_CollectionChanged;
@@ -59,6 +62,7 @@ public partial class ToolsPanel : UserControl
         };
         Unloaded += (_, _) =>
         {
+            FocusTimer.Shared.Changed -= UpdateTimerState;
             _history.Items.CollectionChanged -= Items_CollectionChanged;
             _copied.Items.CollectionChanged -= Items_CollectionChanged;
             _shelf.Items.CollectionChanged -= Items_CollectionChanged;
@@ -96,6 +100,7 @@ public partial class ToolsPanel : UserControl
     private void UpdateState()
     {
         int count = _history.Items.Count;
+        ShotHint.Text = ShotHintText;
         ShotCount.Text = count > 0 ? $"{count} / {ScreenshotHistory.MaxItems}" : string.Empty;
         ClearButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ShotHint.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -302,6 +307,71 @@ public partial class ToolsPanel : UserControl
         _ghost?.FollowCursor();
     }
 
+    private const int MaxTimerMinutes = 600;
+
+    private void UpdateTimerState()
+    {
+        FocusTimer timer = FocusTimer.Shared;
+        TimerStopButton.Visibility = timer.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+        if (!timer.IsRunning)
+        {
+            TimerState.Text = string.Empty;
+            return;
+        }
+
+        (string left, string right) = timer.Display();
+        TimerState.Text = $"{left}:{right} kaldı · {timer.EndsAt:t}'de biter";
+    }
+
+    /// <summary>Süre başlayınca kart kapanır; kalan süre artık saatte.</summary>
+    private void StartTimer(int minutes)
+    {
+        if (minutes is < 1 or > MaxTimerMinutes)
+        {
+            return;
+        }
+
+        FocusTimer.Shared.Start(TimeSpan.FromMinutes(minutes));
+        TimerMinutes.Clear();
+        Opened?.Invoke();
+    }
+
+    private void TimerPreset_Click(object sender, RoutedEventArgs e)
+    {
+        StartTimer(int.Parse((string)((FrameworkElement)sender).Tag, CultureInfo.InvariantCulture));
+    }
+
+    private void TimerCustom_Click(object sender, RoutedEventArgs e)
+    {
+        if (int.TryParse(TimerMinutes.Text, NumberStyles.None, CultureInfo.CurrentCulture, out int minutes))
+        {
+            StartTimer(minutes);
+        }
+        else
+        {
+            TimerMinutes.Focus();
+        }
+    }
+
+    private void TimerMinutes_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        e.Handled = !e.Text.All(char.IsAsciiDigit);
+    }
+
+    private void TimerMinutes_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            TimerCustom_Click(sender, e);
+        }
+    }
+
+    private void TimerStop_Click(object sender, RoutedEventArgs e)
+    {
+        FocusTimer.Shared.Stop();
+    }
+
     private void CopiedClear_Click(object sender, RoutedEventArgs e)
     {
         _copied.Clear();
@@ -342,6 +412,27 @@ public partial class ToolsPanel : UserControl
     private void CopyShot_Click(object sender, RoutedEventArgs e)
     {
         _history.CopyToClipboard(ItemOf(sender));
+    }
+
+    /// <summary>Görüntüdeki yazı panoya geçer, Kopyalananlar'a da düşer. Yazı yoksa pano değişmez, kart açık kalır.</summary>
+    private async void CopyShotText_Click(object sender, RoutedEventArgs e)
+    {
+        string text = await ScreenshotText.RecognizeAsync(ItemOf(sender).Path);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ShotHint.Text = "Bu görüntüde okunabilen yazı bulunamadı.";
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+            Opened?.Invoke();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Pano o an başkasında; kullanıcı yeniden dener.
+        }
     }
 
     private void RevealShot_Click(object sender, RoutedEventArgs e)

@@ -189,6 +189,12 @@ public partial class BarWindow : AppBarWindow
     private readonly NowPlayingWatcher? _nowPlaying;
     private bool _chipAtBarPlace;
     private ImageSource? _claudeIcon;
+
+    /// <summary>Bildirim kartına tıklanınca: Claude'da Claude öne gelir, süre dolduğunda yalnızca kapanır.</summary>
+    private Action? _noticeClicked;
+
+    /// <summary>Hatırlatıcı kartında Tamam (true) ya da Ertele (false).</summary>
+    private Action<bool>? _noticeChosen;
     private bool _volumeAtBarPlace;
     private bool _glassWaitsForVolume;
     private Point _volumePlace;
@@ -276,6 +282,8 @@ public partial class BarWindow : AppBarWindow
             // Grup verisi çubuklar arasında ortak; izleyen bir tane yeter.
             _runTracker = new GroupRunTracker(shellManager.Tasks, settings);
             Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
+            PrivacyWatch.Shared.Changed += PrivacyWatch_Changed;
+            PrivacyWatch_Changed(PrivacyWatch.Shared.Camera, PrivacyWatch.Shared.Microphone);
 
             // Windows bildirimleri gibi ana ekranda; her çubukta ayrı kart çıkmasın.
             _nowPlaying = new NowPlayingWatcher();
@@ -309,11 +317,17 @@ public partial class BarWindow : AppBarWindow
                 RefreshGlass();
             }
         };
+        Chip.ActionChosen += done =>
+        {
+            Action<bool>? chosen = _noticeChosen;
+            _noticeChosen = null;
+            chosen?.Invoke(done);
+        };
         Chip.Clicked += () =>
         {
             if (Chip.IsClaude)
             {
-                FocusClaude();
+                _noticeClicked?.Invoke();
             }
             else
             {
@@ -343,6 +357,8 @@ public partial class BarWindow : AppBarWindow
         UpdateClock();
         _clockTimer.Tick += ClockTimer_Tick;
         _clockTimer.Start();
+        FocusTimer.Shared.Changed += FocusTimer_Changed;
+        FocusTimer_Changed();
 
         if (AppBarMode == AppBarMode.AutoHide)
         {
@@ -1596,6 +1612,15 @@ public partial class BarWindow : AppBarWindow
         QuickVolumeGlyph.Glyph = QuickSettingsPanel.VolumeGlyphFor(AudioEndpoint.TryOpen());
     }
 
+    /// <summary>Kamera ya da mikrofon kullanımdayken hızlı ayarlar düğmesinde renkli simge, ipucunda kullananlar.</summary>
+    private void PrivacyWatch_Changed(IReadOnlyList<string> camera, IReadOnlyList<string> microphone)
+    {
+        CameraSlot.Visibility = camera.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CameraSlot.ToolTip = camera.Count > 0 ? $"Kamerayı kullanıyor: {string.Join(", ", camera)}" : null;
+        MicrophoneSlot.Visibility = microphone.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        MicrophoneSlot.ToolTip = microphone.Count > 0 ? $"Mikrofonu kullanıyor: {string.Join(", ", microphone)}" : null;
+    }
+
     private void NetworkInformation_NetworkStatusChanged(object sender)
     {
         // Windows'un kendi iş parçacığından gelir; profil okumak arayüzü bekletmesin.
@@ -1675,8 +1700,41 @@ public partial class BarWindow : AppBarWindow
         UpdateClock();
     }
 
+    /// <summary>Zamanlayıcı çalışırken saat kalan süreyi gösterir; durunca hemen saate döner.</summary>
+    private void FocusTimer_Changed()
+    {
+        FocusTimer timer = FocusTimer.Shared;
+        if (!timer.IsRunning)
+        {
+            ClockProgress.Visibility = Visibility.Collapsed;
+            _clockMinute = 0;
+            UpdateClock();
+            return;
+        }
+
+        (string left, string right) = timer.Display();
+        if (ClockHours.Text != left)
+        {
+            ClockHours.Text = left;
+        }
+        if (ClockMinutes.Text != right)
+        {
+            ClockMinutes.Text = right;
+        }
+        ClockSeparator.Text = ":";
+        ClockDrops.SetTime(left, right);
+        ClockProgress.Visibility = Orientation == Orientation.Horizontal ? Visibility.Visible : Visibility.Collapsed;
+        ClockProgressScale.ScaleX = 1 - timer.Progress;
+        Clock.ToolTip = $"Zamanlayıcı: {timer.EndsAt:t}'de biter";
+    }
+
     private void UpdateClock()
     {
+        if (FocusTimer.Shared.IsRunning)
+        {
+            return;
+        }
+
         DateTime now = DateTime.Now;
 
         // Her saniye bak: uykudan çıkınca veya sistem saati değişince de hemen düzelsin.
@@ -1811,6 +1869,7 @@ public partial class BarWindow : AppBarWindow
         _stage.Dispose();
         _nowPlaying?.Dispose();
         _clockTimer.Stop();
+        FocusTimer.Shared.Changed -= FocusTimer_Changed;
         _autoHidePulse?.Dispose();
         _glassTimer.Stop();
 
@@ -1822,6 +1881,7 @@ public partial class BarWindow : AppBarWindow
         _volumeWatcher?.Dispose();
         _runTracker?.Dispose();
         Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
+        PrivacyWatch.Shared.Changed -= PrivacyWatch_Changed;
 
         TaskList.ItemsSource = null;
         ((INotifyCollectionChanged)_taskWindows).CollectionChanged -= TaskWindows_CollectionChanged;
@@ -2945,7 +3005,7 @@ public partial class BarWindow : AppBarWindow
     private void NowPlaying_TrackStarted(NowPlayingTrack track)
     {
         // Açık kart varsa kalkmasın; Hızlı ayarlar şarkıyı zaten gösteriyor.
-        if (!_settings.ShowNowPlayingChip || _fullScreenOnThisBar || IsAnyPanelActive() || VolumePopup.IsOpen || NowPlayingChip.IsUserBusy())
+        if (!_settings.ShowNowPlayingChip || IsReminderShown || _fullScreenOnThisBar || IsAnyPanelActive() || VolumePopup.IsOpen || NowPlayingChip.IsUserBusy())
         {
             return;
         }
@@ -3001,6 +3061,7 @@ public partial class BarWindow : AppBarWindow
         string? skip = !_settings.ShowClaudeChip ? "ayar kapalı"
             : IsClaudeProcess(foregroundProcess) ? "Claude önde"
             : IsClaudeInSight() ? "Claude ekranında en üstte"
+            : IsReminderShown ? "hatırlatıcı açık"
             : _fullScreenOnThisBar ? "tam ekran"
             : IsAnyPanelActive() || VolumePopup.IsOpen ? "kart açık"
             : NowPlayingChip.IsUserBusy() ? "rahatsız etme"
@@ -3019,6 +3080,52 @@ public partial class BarWindow : AppBarWindow
         }
 
         Chip.SetClaude(_claudeIcon ?? claude?.Icon, note.Project, note.Status, note.IsWaiting);
+        _noticeClicked = FocusClaude;
+        if (ChipPopup.IsOpen)
+        {
+            PlaceChip();
+            Chip.Renew();
+            return;
+        }
+
+        ChipPopup.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Süre doldu, hatırlatıcı: kullanıcı neye bakıyorsa baksın görmeli, bu yüzden Claude kartının koşulları yok.
+    /// Açık kart varsa kapanır ki üst üste binmesin.
+    /// </summary>
+    internal void ShowNotice(string glyph, string title, string status, int seconds)
+    {
+        if (IsReminderShown)
+        {
+            return;
+        }
+
+        ClosePanel();
+        Chip.SetNotice(null, glyph, title, status, waiting: true, seconds);
+        _noticeClicked = null;
+        if (ChipPopup.IsOpen)
+        {
+            PlaceChip();
+            Chip.Renew();
+            return;
+        }
+
+        ChipPopup.IsOpen = true;
+    }
+
+    /// <summary>Hatırlatıcı kartı ekranda; başka kart onu ezmez.</summary>
+    internal bool IsReminderShown => ChipPopup.IsOpen && Chip.IsSticky;
+
+    /// <summary>Hatırlatıcı: kart kullanıcı Tamam ya da Ertele diyene kadar kalır (kullanıcının seçimi).</summary>
+    internal void ShowReminder(Reminder reminder, Action<bool> chosen)
+    {
+        ClosePanel();
+        string when = reminder.DueAt.Date == DateTime.Today ? reminder.TimeLabel : reminder.DueAt.ToString("d MMM t");
+        Chip.SetNotice(null, "", reminder.Text, $"Hatırlatıcı · {when}", waiting: true, seconds: 0);
+        _noticeClicked = null;
+        _noticeChosen = chosen;
         if (ChipPopup.IsOpen)
         {
             PlaceChip();

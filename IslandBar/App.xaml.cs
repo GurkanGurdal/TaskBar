@@ -135,6 +135,9 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(OpenSettings), null, Timeout.Infinite, false);
 
         ClaudeHook.Listen(note => Dispatcher.BeginInvoke(() => ShowClaudeNote(note)));
+        FocusTimer.Shared.Finished += FocusTimer_Finished;
+        ReminderStore.Shared.Due += Reminder_Due;
+        ReminderStore.Shared.Start();
 
         TaskbarRecovery.StartWatchdog();
 
@@ -261,6 +264,62 @@ public partial class App : Application
         }
     }
 
+    private const int TimerNoticeSeconds = 30;
+    private const int NextReminderDelayMs = 700;
+    private static readonly TimeSpan SnoozeDelay = TimeSpan.FromMinutes(10);
+    private readonly Queue<Reminder> _dueReminders = new();
+    private Reminder? _shownReminder;
+
+    /// <summary>Zamanı gelen hatırlatıcı sıraya girer; aynı anda tek kart, kullanıcı yanıtlayınca sıradaki.</summary>
+    private void Reminder_Due(Reminder reminder)
+    {
+        _dueReminders.Enqueue(reminder);
+        if (_shownReminder == null)
+        {
+            ShowNextReminder();
+        }
+    }
+
+    private void ShowNextReminder()
+    {
+        if (!_dueReminders.TryDequeue(out Reminder? reminder) || _bars.FirstOrDefault(bar => bar.Screen.Primary) is not { } bar)
+        {
+            _shownReminder = null;
+            return;
+        }
+
+        _shownReminder = reminder;
+        System.Media.SystemSounds.Asterisk.Play();
+        bar.ShowReminder(reminder, done =>
+        {
+            if (done)
+            {
+                ReminderStore.Shared.Remove(reminder);
+            }
+            else
+            {
+                ReminderStore.Shared.Snooze(reminder, SnoozeDelay);
+            }
+
+            // Kart önce kapansın; sıradaki hemen açılırsa kapanış onu da götürürdü.
+            var next = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(NextReminderDelayMs) };
+            next.Tick += (_, _) =>
+            {
+                next.Stop();
+                ShowNextReminder();
+            };
+            next.Start();
+        });
+    }
+
+    /// <summary>Süre doldu: ana ekrandaki çubukta kart, kısa bir Windows sesiyle.</summary>
+    private void FocusTimer_Finished(TimeSpan total)
+    {
+        System.Media.SystemSounds.Exclamation.Play();
+        string length = total.TotalHours >= 1 ? $"{total.TotalHours:0.#} saat" : $"{Math.Round(total.TotalMinutes)} dk";
+        _bars.FirstOrDefault(bar => bar.Screen.Primary)?.ShowNotice("", "Süre doldu", $"{length} zamanlayıcı", TimerNoticeSeconds);
+    }
+
     /// <summary>Kart Claude'un penceresinin bulunduğu ekranda çıkar; pencere yoksa (terminalde) ana ekranda.</summary>
     private void ShowClaudeNote(ClaudeNote note)
     {
@@ -320,6 +379,13 @@ public partial class App : Application
             var bar = new BarWindow(_shellManager, _settings!, screen);
             bar.Show();
             _bars.Add(bar);
+        }
+
+        // Ekran düzeni değişti ya da tema değişti: ekrandaki hatırlatıcı kartı eski çubukla gitti, yeniden çıksın.
+        if (_shownReminder is { } shown)
+        {
+            _shownReminder = null;
+            Reminder_Due(shown);
         }
     }
 

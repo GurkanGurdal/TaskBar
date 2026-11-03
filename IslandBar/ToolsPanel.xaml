@@ -32,6 +32,45 @@
             </Setter>
         </Style>
 
+        <!-- Zamanlayıcının hazır süre düğmeleri -->
+        <Style x:Key="TimerChip" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chip" CornerRadius="8" Background="{StaticResource MutedFill}" Padding="10,4">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{StaticResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MinutesBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentFill}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{StaticResource ShotStroke}" Padding="8,3">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="ShotTemplate" DataType="{x:Type local:ScreenshotItem}">
             <Border x:Name="Tile"
                     Width="145"
@@ -55,6 +94,7 @@
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Kopyala" Click="CopyShot_Click" />
+                        <MenuItem Header="Metni kopyala" Click="CopyShotText_Click" />
                         <MenuItem Header="Dosya konumunu aç" Click="RevealShot_Click" />
                         <Separator />
                         <MenuItem Header="Sil" Click="DeleteShot_Click" />
@@ -171,6 +211,38 @@
                    FontWeight="SemiBold"
                    FontSize="15"
                    Margin="0,0,0,12" />
+
+        <!-- Zamanlayıcı: çalışırken saat kalan süreyi gösterir -->
+        <DockPanel Margin="0,0,0,8">
+            <Button x:Name="TimerStopButton"
+                    DockPanel.Dock="Right"
+                    Content="Durdur"
+                    Style="{StaticResource ClearButton}"
+                    Click="TimerStop_Click" />
+            <TextBlock Foreground="{StaticResource TextPrimary}" FontSize="13" VerticalAlignment="Center">
+                <Run Text="Zamanlayıcı" />
+                <Run x:Name="TimerState" Foreground="{StaticResource TextSecondary}" FontSize="12" />
+            </TextBlock>
+        </DockPanel>
+        <WrapPanel x:Name="TimerChoices" Margin="0,0,0,-6">
+            <Button Style="{StaticResource TimerChip}" Content="5 dk" Tag="5" Click="TimerPreset_Click" />
+            <Button Style="{StaticResource TimerChip}" Content="10 dk" Tag="10" Click="TimerPreset_Click" />
+            <Button Style="{StaticResource TimerChip}" Content="15 dk" Tag="15" Click="TimerPreset_Click" />
+            <Button Style="{StaticResource TimerChip}" Content="25 dk" Tag="25" Click="TimerPreset_Click" />
+            <Button Style="{StaticResource TimerChip}" Content="45 dk" Tag="45" Click="TimerPreset_Click" />
+            <Button Style="{StaticResource TimerChip}" Content="60 dk" Tag="60" Click="TimerPreset_Click" />
+            <TextBox x:Name="TimerMinutes"
+                     Style="{StaticResource MinutesBox}"
+                     Width="46"
+                     Margin="4,0,6,6"
+                     MaxLength="3"
+                     ToolTip="Dakika yaz, Enter'a bas"
+                     PreviewTextInput="TimerMinutes_PreviewTextInput"
+                     KeyDown="TimerMinutes_KeyDown" />
+            <Button Style="{StaticResource TimerChip}" Content="Başlat" Click="TimerCustom_Click" />
+        </WrapPanel>
+
+        <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
 
         <DockPanel Margin="0,0,0,8">
             <Button x:Name="ClearButton"

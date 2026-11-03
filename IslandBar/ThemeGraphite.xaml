@@ -25,6 +25,9 @@
     <SolidColorBrush x:Key="OnAccentDivider" Color="#26000000" />
     <SolidColorBrush x:Key="FolderGradient" Color="#F2A93B" />
     <SolidColorBrush x:Key="AttentionFill" Color="#F5A742" />
+    <!-- Kamera / mikrofon kullanımda (iPhone gibi: kamera yeşil, mikrofon turuncu) -->
+    <SolidColorBrush x:Key="CameraFill" Color="#4ADE80" />
+    <SolidColorBrush x:Key="MicrophoneFill" Color="#F5A742" />
 
     <!-- Düğme ve kutu zeminleri: yükseklik beyazın opaklığıyla -->
     <SolidColorBrush x:Key="SubtleFill" Color="#0DFFFFFF" />

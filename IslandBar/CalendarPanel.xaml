@@ -35,6 +35,23 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentFill}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{StaticResource ShotStroke}" Padding="8,0">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <StackPanel>
@@ -93,5 +110,63 @@
                 </UniformGrid.RenderTransform>
             </UniformGrid>
         </Border>
+
+        <!-- Hatırlatıcılar (kullanıcının seçimi: takvimde; güne tıkla, o güne ekle). Diskte tutulur. -->
+        <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,8,0,10" />
+        <DockPanel Margin="0,0,0,6">
+            <TextBlock x:Name="ReminderDay" DockPanel.Dock="Right" FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" />
+            <TextBlock Text="Hatırlatıcılar" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </DockPanel>
+        <ItemsControl x:Name="ReminderList" Focusable="False">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border x:Name="Row" Height="30" Padding="6,0" CornerRadius="8" Background="Transparent">
+                        <Border.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Sil" Click="DeleteReminder_Click" />
+                            </ContextMenu>
+                        </Border.ContextMenu>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" Margin="0,0,8,0" Foreground="{StaticResource TextSecondary}" Text="&#xEA8F;" />
+                            <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" FontSize="11.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}" Text="{Binding TimeLabel}" />
+                            <TextBlock FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Text}" ToolTip="{Binding Text}" />
+                        </DockPanel>
+                    </Border>
+                    <DataTemplate.Triggers>
+                        <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <DockPanel Margin="0,6,0,0">
+            <Button DockPanel.Dock="Right"
+                    Style="{StaticResource GhostButton}"
+                    Width="Auto"
+                    Padding="10,0"
+                    Background="{StaticResource MutedFill}"
+                    Content="Ekle"
+                    FontSize="12.5"
+                    Click="AddReminder_Click" />
+            <TextBox x:Name="ReminderTime"
+                     DockPanel.Dock="Right"
+                     Style="{StaticResource FieldBox}"
+                     Width="58"
+                     Margin="6,0"
+                     MaxLength="5"
+                     ToolTip="Saat (ör. 18:30)"
+                     KeyDown="ReminderField_KeyDown" />
+            <TextBox x:Name="ReminderText"
+                     Style="{StaticResource FieldBox}"
+                     MaxLength="120"
+                     KeyDown="ReminderField_KeyDown" />
+        </DockPanel>
+        <TextBlock x:Name="ReminderHint"
+                   Margin="0,6,0,0"
+                   FontSize="11.5"
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource TextSecondary}"
+                   Text="Güne tıklayıp o güne ekle. Zamanı gelince kart sen Tamam diyene kadar kalır." />
     </StackPanel>
 </UserControl>

@@ -630,6 +630,13 @@
                             </Style>
                         </Button.Resources>
                         <StackPanel Orientation="{Binding Orientation, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <!-- Kamera / mikrofon kullanımda: renkli simge, ipucunda kullanan uygulama (PrivacyWatch) -->
+                            <Grid x:Name="CameraSlot" Style="{StaticResource StatusSlot}" Visibility="Collapsed">
+                                <TextBlock Text="&#xE714;" Foreground="{StaticResource CameraFill}" />
+                            </Grid>
+                            <Grid x:Name="MicrophoneSlot" Style="{StaticResource StatusSlot}" Visibility="Collapsed">
+                                <TextBlock Text="&#xE720;" Foreground="{StaticResource MicrophoneFill}" />
+                            </Grid>
                             <Grid Style="{StaticResource StatusSlot}">
                                 <TextBlock x:Name="QuickNetworkGlyph" Text="&#xE701;" />
                             </Grid>
@@ -713,6 +720,15 @@
                                 <TranslateTransform x:Name="ClockDateSlide" />
                             </TextBlock.RenderTransform>
                         </TextBlock>
+                        </Grid>
+                        <!-- Zamanlayıcı çalışırken saat kalan süreyi gösterir; altında kalan sürenin çizgisi (kullanıcının seçimi) -->
+                        <Grid x:Name="ClockProgress" Height="2" Margin="2,2,2,0" Visibility="Collapsed">
+                            <Border CornerRadius="1" Background="{StaticResource MarkFill}" Opacity="0.5" />
+                            <Border CornerRadius="1" Background="{StaticResource AccentFill}" RenderTransformOrigin="0,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform x:Name="ClockProgressScale" />
+                                </Border.RenderTransform>
+                            </Border>
                         </Grid>
                     </StackPanel>
                 </StackPanel>

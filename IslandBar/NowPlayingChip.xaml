@@ -129,6 +129,40 @@
                     <Ellipse Fill="{StaticResource AttentionFill}" />
                 </Grid>
             </Grid>
+
+            <!-- Hatırlatıcıda: kart kullanıcı seçene kadar kalır (kullanıcının seçimi) -->
+            <StackPanel x:Name="NoticeActions"
+                        Grid.Column="2"
+                        Margin="14,0,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                <StackPanel.Resources>
+                    <Style TargetType="Button">
+                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                        <Setter Property="FontSize" Value="12.5" />
+                        <Setter Property="Margin" Value="6,0,0,0" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="Focusable" Value="False" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Plate" CornerRadius="8" Background="{StaticResource MutedFill}" Padding="10,4">
+                                        <ContentPresenter VerticalAlignment="Center" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Plate" Property="Background" Value="{StaticResource HoverBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </StackPanel.Resources>
+                <Button Content="Ertele 10 dk" Click="Snooze_Click" />
+                <Button Content="Tamam" Click="Done_Click" />
+            </StackPanel>
         </Grid>
     </local:GlassCard>
 </UserControl>
