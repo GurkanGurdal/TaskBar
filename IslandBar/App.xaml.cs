@@ -42,6 +42,13 @@ public partial class App : Application
             Environment.Exit(0);
         }
 
+        // Terminal ya da ajan bir işin içinde başlattıysa işin dışında yeniden başla: iş topluca kapanınca çubuk ve bekçi
+        // birlikte, iz bırakmadan ölüyordu.
+        if (JobEscape.RelaunchOutside())
+        {
+            Environment.Exit(0);
+        }
+
         // ShellManager Windows tarafında kayıt yapıyor; ikinci kopya ona hiç ulaşmamalı.
         _instanceMutex = new Mutex(true, TaskbarRecovery.InstanceMutexName, out bool isFirstInstance);
         _showSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\IslandBar.ShowSettings");

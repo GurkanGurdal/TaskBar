@@ -31,6 +31,8 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
 - **Geri getirme her yolda garanti:** temiz kapanış, `App` çöküş işleyicileri, oturum kapanışı, `TaskbarRecovery`
   (önceki çalışma temiz kapanmadıysa açılışta geri alır), bekçi süreç (`--watchdog <pid>`; hatada yeniden başlatır,
   5 dakikada en çok 3). Ayrıntı notlarda (MVP 9).
+  Gezgin dışından (terminal, ajan) başlatılan Release çubuğu kendini Gezgin'e başlattırır (`JobEscape`): başlatanın işiyle
+  birlikte iz bırakmadan ölüyordu.
 - Her ekrana bir `BarWindow` (ana ekran önce); ekran düzeni değişince hepsi kapatılıp açılır. Tepsi, hızlı ayarlar,
   şarkı kartı, ses göstergesi yalnızca ana ekranda.
 - Tasarım: ekranın ortasında tek ada (Başlat, Düzenler | uygulamalar | tepsi düğmesi, hızlı ayarlar, saat).

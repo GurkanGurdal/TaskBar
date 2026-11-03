@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -181,6 +181,12 @@ internal static class TaskbarRecovery
 
     public static void StartWatchdog()
     {
+        // Çubuk bir işin içinde kaldıysa bekçi işin dışında: iş topluca sonlandırılınca geri alacak kimse kalmıyordu.
+        if (JobEscape.Start($"\"{Environment.ProcessPath}\" {WatchdogArgument} {Environment.ProcessId}"))
+        {
+            return;
+        }
+
         var startInfo = new ProcessStartInfo(Environment.ProcessPath!, $"{WatchdogArgument} {Environment.ProcessId}")
         {
             UseShellExecute = false,

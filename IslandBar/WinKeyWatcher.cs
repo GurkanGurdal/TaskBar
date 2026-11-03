@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace IslandBar;
 
@@ -59,6 +59,14 @@ internal sealed class WinKeyWatcher : IDisposable
 
     private bool OnKey(int key, bool down)
     {
+        // Windows tuşunun bırakılışı kancaya hiç gelmeyebilir (o an kilit ekranı, UAC ya da yönetici olarak çalışan
+        // pencere öndeydi): o zaman "basılı" sanılıyor, tek başına basılan 1 Win+1 gibi yutulup çubuktaki ilk
+        // uygulamayı açıp kapatıyordu (kullanıcı yaşadı). Gerçek durum her tuşta sorulur.
+        if (_winDown && key is not (VkLeftWin or VkRightWin) && !IsDown(VkLeftWin) && !IsDown(VkRightWin))
+        {
+            _winDown = false;
+        }
+
         if (key is VkLeftWin or VkRightWin)
         {
             if (down)
