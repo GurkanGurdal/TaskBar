@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -17,7 +17,8 @@ public enum ToolKind
     Copied,
     Shelf,
     Reminders,
-    Translate
+    Translate,
+    Convert
 }
 
 /// <summary>
@@ -46,6 +47,7 @@ internal sealed class ToolsRing : Window
         (ToolKind.Screenshots, "", "Ekran görüntüleri"),
         (ToolKind.Copied, "", "Kopyalananlar"),
         (ToolKind.Shelf, "", "Dosya rafı"),
+        (ToolKind.Convert, "", "Dönüştür"),
         (ToolKind.Reminders, "", "Hatırlatıcılar"),
         (ToolKind.Translate, "", "Çeviri")
     ];
@@ -57,6 +59,9 @@ internal sealed class ToolsRing : Window
     private readonly GlassCard _labelPlate;
     private int _selected = -1;
     private bool _closing;
+
+    /// <summary>Karoların ve ad etiketinin camı adadaki gibi arkası değişince tazelenir.</summary>
+    private readonly GlassWindowWatch _glassWatch;
 
     /// <param name="center">İmlecin ekran pikseli; halka bunun çevresinde açılır.</param>
     public ToolsRing(System.Drawing.Point center)
@@ -100,7 +105,6 @@ internal sealed class ToolsRing : Window
                 Height = TileSize,
                 Padding = new Thickness(0),
                 CornerRadius = new CornerRadius(TileCorner),
-                BlurRadius = 18,
                 Cursor = Cursors.Hand,
                 ToolTip = ToolName(i),
                 RenderTransformOrigin = new Point(0.5, 0.5),
@@ -129,13 +133,13 @@ internal sealed class ToolsRing : Window
         {
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(9, 3, 9, 4),
-            BlurRadius = 18,
             Content = _label,
             Opacity = 0,
             IsHitTestVisible = false,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
+        _glassWatch = new GlassWindowWatch(this, () => _tiles.Append(_labelPlate));
         var root = new Grid();
         root.Children.Add(canvas);
         root.Children.Add(_labelPlate);
@@ -155,6 +159,9 @@ internal sealed class ToolsRing : Window
 
     /// <summary>Bir araç seçildi; halkanın merkezi (ekran pikseli) kartın açılacağı yer.</summary>
     public event Action<ToolKind, System.Drawing.Point>? Chosen;
+
+    /// <summary>Dönüştür dilimine dosya bırakıldı.</summary>
+    public event Action<string[]>? FilesDropped;
 
     /// <summary>Tuş bırakıldı: yön seçildiyse o araç açılır, seçilmediyse tekerlek tıklama için açık kalır.</summary>
     public void Release()
@@ -223,12 +230,13 @@ internal sealed class ToolsRing : Window
 
     private static bool IsToolOn(ToolKind kind)
     {
-        return kind == ToolKind.Translate && TranslateMode.Shared.IsOn;
+        return kind == ToolKind.Translate && TranslateMode.Shared.IsOn || kind == ToolKind.Convert && ConvertCard.Current != null;
     }
 
     private static string ToolName(int index)
     {
-        return IsToolOn(Tools[index].Kind) ? "Çeviriyi kapat" : Tools[index].Name;
+        return !IsToolOn(Tools[index].Kind) ? Tools[index].Name
+            : Tools[index].Kind == ToolKind.Translate ? "Çeviriyi kapat" : "Dönüştürmeyi kapat";
     }
 
     private static double Angle(int index)
@@ -289,7 +297,7 @@ internal sealed class ToolsRing : Window
     /// <summary>Ad etiketi de cam: boyu değişince arkası yeniden alınır, hazır olunca görünür.</summary>
     private async void ShowLabel()
     {
-        await _labelPlate.RefreshGlassAsync(animateTint: false, isHidden: _labelPlate.Opacity == 0);
+        await _glassWatch.RefreshAsync(_labelPlate, isHidden: _labelPlate.Opacity == 0);
         if (_selected >= 0 && !_closing)
         {
             _labelPlate.Opacity = 1;
@@ -334,7 +342,7 @@ internal sealed class ToolsRing : Window
     private void Ring_DragOver(object sender, DragEventArgs e)
     {
         int tile = TileAt(e);
-        bool shelf = tile >= 0 && Tools[tile].Kind == ToolKind.Shelf && BarWindow.SetDropEffect(e);
+        bool shelf = tile >= 0 && Tools[tile].Kind is ToolKind.Shelf or ToolKind.Convert && BarWindow.SetDropEffect(e);
         if (!shelf)
         {
             e.Effects = DragDropEffects.None;
@@ -351,6 +359,12 @@ internal sealed class ToolsRing : Window
             FileShelf.Shared.Add(paths);
             Dismiss();
             Chosen?.Invoke(ToolKind.Shelf, _center);
+        }
+        else if (tile >= 0 && Tools[tile].Kind == ToolKind.Convert && BarWindow.SetDropEffect(e) && e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            // Dönüştür dilimine bırakılan dosyalar kartın içine.
+            Dismiss();
+            FilesDropped?.Invoke(files);
         }
     }
 

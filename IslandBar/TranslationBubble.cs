@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -34,6 +34,9 @@ internal sealed class TranslationBubble : Window
     private readonly ScaleTransform _scale = new(0.94, 0.94);
     private bool _closing;
 
+    /// <summary>Cam adadaki gibi arkası değişince tazelenir.</summary>
+    private readonly GlassWindowWatch _glassWatch;
+
     /// <param name="anchor">Seçimin ekrandaki yeri (piksel); balon altına, sığmazsa üstüne açılır.</param>
     private TranslationBubble(Rect anchor, FrameworkElement content)
     {
@@ -53,13 +56,13 @@ internal sealed class TranslationBubble : Window
             MaxWidth = MaxCardWidth,
             Padding = new Thickness(12, 9, 8, 6),
             CornerRadius = new CornerRadius(11),
-            BlurRadius = 24,
             Opacity = 0,
             Content = content,
             RenderTransformOrigin = new Point(0.5, 0),
             RenderTransform = _scale
         };
         Content = new Border { Padding = new Thickness(ShadowMargin), Child = _card };
+        _glassWatch = new GlassWindowWatch(this, () => [_card]);
         SizeChanged += (_, _) => Place();
     }
 

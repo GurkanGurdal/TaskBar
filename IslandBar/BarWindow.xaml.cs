@@ -621,7 +621,7 @@ public partial class BarWindow : AppBarWindow
             : Math.Abs(slide.X) >= DesiredWidth;
     }
 
-    private bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
+    internal bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
     {
         area = System.Drawing.Rectangle.Empty;
         if (!IsLoaded || MainIsland.ActualWidth <= 0 || MainIsland.ActualHeight <= 0)

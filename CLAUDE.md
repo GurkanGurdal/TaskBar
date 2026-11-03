@@ -41,10 +41,15 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   çevrilir, seçimin altında balon; açıkken
   şarkı kartının yerinde Kapat düğmeli kalıcı kart (`SetResident`). Google'ın anahtarsız
   ucu istek engelliyor; tarayıcı gibi görünüp engeli aşma.
+- Dönüştür: tekerlekteki araç, adanın üstünde kare kart (`ConvertCard`): dosyalar bırakılır, işlem seçilir, "orijinal kalsın mı"
+  sorulur (hayır: Geri Dönüşüm Kutusu), deste halkaya dürülür, bitince yeni dosyalarla açılır. Dönüşümler kurulu bir şey
+  gerektirmez (`FileConversions`: WIC, Office, Windows PDF, Media Foundation). Alt + sağ tık menüsü denendi, reddedildi.
 - **Temalar:** Cam (varsayılan, `GlassCapture` ile kendi camı), Beyaz, Grafit. Palet dosyaları `Theme*.xaml`, aynı
   anahtarlar; renkler `StaticResource` (tema değişince çubuklar yeniden açılır). Sabit renk yazma, palete anahtar ekle.
   Camsız temalar `UsesGlass` false; açık zemine özgü davranış `IsLight`'a bağlı. Yeni tema: palet + `BarTheme` +
   `ThemeManager.Apply` + `SettingsWindow` listesi.
+- Çubuk dışındaki cam pencereler (araçlar, balonlar) `GlassWindowWatch` ile adadaki kurallara uyar: arkası değişince
+  tazelenir, bulanıklık adanınki gibi 9 (`GlassCard` varsayılanı); görünür kartın tazelemesi `RefreshAsync` sırasından.
 - Yeni kart eklerken öteki kartların listelerine de ekle: `CardOf`, `CardAndButton`, `ClosePanel`, `CanRetract`,
   `IsAnyPanelActive`, cam izleyici, `WarmPopupsAsync`, `PanelButton_MouseEnter`.
 - Çubukta uygulama başına bir düğme (pin + pencereleri tek düğme, `TaskGroup`); eşleşme `GroupItem.Matches`.

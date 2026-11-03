@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -34,6 +34,9 @@ internal sealed class SelectionCounter : Window
     private readonly TextBlock _text;
     private bool _closing;
 
+    /// <summary>Cam adadaki gibi arkası değişince tazelenir.</summary>
+    private readonly GlassWindowWatch _glassWatch;
+
     /// <param name="start">Sürüklemenin başladığı yer, ekran pikseli.</param>
     public SelectionCounter(System.Drawing.Point start)
     {
@@ -61,11 +64,11 @@ internal sealed class SelectionCounter : Window
             Width = PlateWidth,
             Padding = new Thickness(8, 4, 8, 5),
             CornerRadius = new CornerRadius(6),
-            BlurRadius = 18,
             Opacity = 0,
             Content = _text
         };
         Content = new Border { Padding = new Thickness(ShadowMargin), Child = _card };
+        _glassWatch = new GlassWindowWatch(this, () => [_card]);
     }
 
     public void Update(int count)

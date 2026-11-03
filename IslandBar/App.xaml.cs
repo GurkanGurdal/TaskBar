@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -278,6 +278,7 @@ public partial class App : Application
         _toolCard?.Dismiss();
         var ring = new ToolsRing(System.Windows.Forms.Cursor.Position);
         ring.Chosen += OpenToolCard;
+        ring.FilesDropped += files => OpenConvertCard(files);
         ring.Closed += (_, _) =>
         {
             if (_toolsRing == ring)
@@ -299,6 +300,19 @@ public partial class App : Application
             TranslateMode.Shared.Toggle();
             return;
         }
+        if (kind == ToolKind.Convert)
+        {
+            // Kartı adanın üstünde; açıksa kapanır.
+            if (ConvertCard.Current is { } open)
+            {
+                open.Dismiss();
+            }
+            else
+            {
+                OpenConvertCard([]);
+            }
+            return;
+        }
 
         var card = new ToolCardWindow(kind, center);
         card.Closed += (_, _) =>
@@ -310,6 +324,22 @@ public partial class App : Application
         };
         _toolCard = card;
         card.Show();
+    }
+
+    /// <summary>Dönüştür kartı ana ekrandaki adanın üstünde; açıksa dosyalar ona eklenir.</summary>
+    private void OpenConvertCard(string[] files)
+    {
+        if (ConvertCard.Current is not { } card)
+        {
+            if (_bars.FirstOrDefault(bar => bar.Screen.Primary) is not { } bar || !bar.TryGetIslandRestRect(out System.Drawing.Rectangle island))
+            {
+                return;
+            }
+
+            card = new ConvertCard(island, bar.AppBarEdge);
+            card.Show();
+        }
+        card.AddFiles(files);
     }
 
     private const int TimerNoticeSeconds = 30;

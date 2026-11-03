@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -28,6 +28,9 @@ internal sealed class ToolCardWindow : Window
     private readonly ScaleTransform _scale = new(0.92, 0.92);
     private bool _dragging;
     private bool _closing;
+
+    /// <summary>Cam adadaki gibi arkası değişince tazelenir.</summary>
+    private readonly GlassWindowWatch _glassWatch;
 
     public ToolCardWindow(ToolKind kind, System.Drawing.Point center)
     {
@@ -78,13 +81,13 @@ internal sealed class ToolCardWindow : Window
             Width = width + 32,
             Padding = new Thickness(16, 14, 16, 12),
             CornerRadius = new CornerRadius(16),
-            BlurRadius = 24,
             AllowDrop = false,
             Content = content,
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = _scale
         };
         Content = new Border { Padding = new Thickness(ShadowMargin), Child = _card };
+        _glassWatch = new GlassWindowWatch(this, () => [_card]);
 
         KeyDown += (_, e) =>
         {
