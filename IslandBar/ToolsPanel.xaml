@@ -206,13 +206,15 @@
     </UserControl.Resources>
 
     <StackPanel>
-        <TextBlock Text="IslandBar Araçları"
+        <TextBlock x:Name="ToolsTitle"
+                   Text="IslandBar Araçları"
                    Foreground="{StaticResource TextPrimary}"
                    FontWeight="SemiBold"
                    FontSize="15"
                    Margin="0,0,0,12" />
 
         <!-- Zamanlayıcı: çalışırken saat kalan süreyi gösterir -->
+        <StackPanel x:Name="TimerSection">
         <DockPanel Margin="0,0,0,8">
             <Button x:Name="TimerStopButton"
                     DockPanel.Dock="Right"
@@ -242,8 +244,10 @@
             <Button Style="{StaticResource TimerChip}" Content="Başlat" Click="TimerCustom_Click" />
         </WrapPanel>
 
-        <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+        <Border x:Name="TimerDivider" Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+        </StackPanel>
 
+        <StackPanel x:Name="ShotSection">
         <DockPanel Margin="0,0,0,8">
             <Button x:Name="ClearButton"
                     DockPanel.Dock="Right"
@@ -277,7 +281,8 @@
                    TextWrapping="Wrap"
                    Text="Henüz görüntü yok. Win + Shift + S ya da Win + PrtScn ile aldıkların burada birikir, son 10 tanesi saklanır." />
 
-        <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+        <Border x:Name="ShotDivider" Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+        </StackPanel>
 
         <StackPanel x:Name="CopiedSection">
             <DockPanel Margin="0,0,0,8">
@@ -314,9 +319,10 @@
                        TextWrapping="Wrap"
                        Text="Henüz metin yok. Kopyaladığın son 10 metin burada birikir; yalnızca bellekte durur, IslandBar kapanınca silinir." />
 
-            <Border Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
+            <Border x:Name="CopiedDivider" Height="1" Margin="0,14" Background="{StaticResource DividerBrush}" />
         </StackPanel>
 
+        <StackPanel x:Name="ShelfSection">
         <DockPanel Margin="0,0,0,8">
             <Button x:Name="ShelfClearButton"
                     DockPanel.Dock="Right"
@@ -371,5 +377,6 @@
                 </Grid>
             </Grid>
         </Border>
+        </StackPanel>
     </StackPanel>
 </UserControl>

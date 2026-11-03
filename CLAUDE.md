@@ -33,8 +33,10 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   5 dakikada en çok 3). Ayrıntı notlarda (MVP 9).
 - Her ekrana bir `BarWindow` (ana ekran önce); ekran düzeni değişince hepsi kapatılıp açılır. Tepsi, hızlı ayarlar,
   şarkı kartı, ses göstergesi yalnızca ana ekranda.
-- Tasarım: ekranın ortasında tek ada (Başlat, Düzenler, Araçlar | uygulamalar | tepsi düğmesi, hızlı ayarlar, saat).
+- Tasarım: ekranın ortasında tek ada (Başlat, Düzenler | uygulamalar | tepsi düğmesi, hızlı ayarlar, saat).
   Kartlar (`GlassCard`) cam, açılış/kapanış Genie. Ayrı iş parçacıklı animasyonlar, gecikme bütçesi ölçülerek korunur.
+- Araçlar çubukta değil: Alt + S basılı tutulunca imlecin yerinde tekerlek (`ToolsRing`), seçilen aracın kartı orada
+  (`ToolCardWindow`, `ToolsPanel.Only`).
 - **Temalar:** Cam (varsayılan, `GlassCapture` ile kendi camı), Beyaz, Grafit. Palet dosyaları `Theme*.xaml`, aynı
   anahtarlar; renkler `StaticResource` (tema değişince çubuklar yeniden açılır). Sabit renk yazma, palete anahtar ekle.
   Camsız temalar `UsesGlass` false; açık zemine özgü davranış `IsLight`'a bağlı. Yeni tema: palet + `BarTheme` +

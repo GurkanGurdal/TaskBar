@@ -68,7 +68,6 @@ public partial class BarWindow : AppBarWindow
     private const double ClockDigitsEnd = 0.62;
     private const double ClockLiquidStart = 0.68;
     private const double PanelShadowMargin = 20;
-    private const int ToolsDragFadeMs = 120;
     private const string PinnedKeyPrefix = "pin:";
     private const int MaxGapSlots = 6;
     private const int GapCloseDelayMs = 120;
@@ -162,8 +161,6 @@ public partial class BarWindow : AppBarWindow
     private readonly ListCollectionView? _trayBattery;
     private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
-    private readonly DispatcherTimer _dragOpenTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
-    private GlassCard? _dragOpenCard;
     private bool _startMenuWasOpen;
     private readonly ObservableCollection<TaskGroup> _taskGroups = new();
     private int _wheelRemainder;
@@ -265,7 +262,6 @@ public partial class BarWindow : AppBarWindow
         SyncTaskGroups();
         _previewShowTimer.Tick += PreviewShowTimer_Tick;
         _previewHideTimer.Tick += PreviewHideTimer_Tick;
-        _dragOpenTimer.Tick += DragOpenTimer_Tick;
         _gapCloseTimer.Tick += GapCloseTimer_Tick;
 
         // Tepsi gibi yalnızca ana ekranda. Gizlemek olmaz: IconButton şablonunun Loaded animasyonu,
@@ -334,9 +330,6 @@ public partial class BarWindow : AppBarWindow
                 QuickPanel.OpenMediaApp(Chip.AppId);
             }
         };
-        ToolsContent.DragStarted += ToolsContent_DragStarted;
-        ToolsContent.DragFinished += ToolsContent_DragFinished;
-        ToolsContent.Opened += ClosePanel;
         CalendarContent.Opened += ClosePanel;
 
         // Tepsi, Windows'taki gibi yalnızca ana ekranda. Çubukta pil kalır, gerisi tek düğmede toplanır.
@@ -493,7 +486,7 @@ public partial class BarWindow : AppBarWindow
 
         // Çubuk gizliyken ada izlenmez, ama şarkı kartı adanın yerinde duruyor olabilir.
         System.Drawing.Rectangle[]? islandStrips = !IsIslandOffScreen() && TryGetIslandRestRect(out System.Drawing.Rectangle island) ? IslandStrips(island) : null;
-        Popup? card = GroupPanel.IsOpen ? GroupPanel : TrayPopup.IsOpen ? TrayPopup : ToolsPopup.IsOpen ? ToolsPopup : QuickPopup.IsOpen ? QuickPopup : StartPopup.IsOpen ? StartPopup
+        Popup? card = GroupPanel.IsOpen ? GroupPanel : TrayPopup.IsOpen ? TrayPopup : QuickPopup.IsOpen ? QuickPopup : StartPopup.IsOpen ? StartPopup
             : CalendarPopup.IsOpen ? CalendarPopup : Chip.IsShown && !Chip.IsHiding ? ChipPopup : null;
         System.Drawing.Rectangle[]? cardStrips = card != null ? CardStrips(card) : null;
         if (islandStrips == null && cardStrips == null)
@@ -788,7 +781,7 @@ public partial class BarWindow : AppBarWindow
     private bool CanRetract()
     {
         // Başlat ana ekranda açılıyor; Windows'taki gibi açıkken çubuk da görünsün.
-        return base.ShouldAllowAutoHide() && !_cursorInBarZone && !HoldsBar(GroupPanel) && !HoldsBar(TrayPopup) && !HoldsBar(ToolsPopup)
+        return base.ShouldAllowAutoHide() && !_cursorInBarZone && !HoldsBar(GroupPanel) && !HoldsBar(TrayPopup)
             && !HoldsBar(CalendarPopup) && !HoldsBar(PreviewPopup) && !HoldsBar(QuickPopup) && !HoldsBar(StartPopup) && _geniesPlaying == 0 && !(_startMenuVisible && Screen.Primary)
             && _draggedGroup == null && !_attentionWanted && _trayMenuProcess == 0;
     }
@@ -886,7 +879,7 @@ public partial class BarWindow : AppBarWindow
     /// <summary>Kendi cam kartı olan açılır kartlar; hızlı ayarlar ve Başlat kartın kendisi.</summary>
     private GlassCard CardOf(Popup popup)
     {
-        return popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : popup == ToolsPopup ? ToolsCard : popup == CalendarPopup ? CalendarCard : PreviewCard;
+        return popup == GroupPanel ? PanelCard : popup == TrayPopup ? TrayCard : popup == CalendarPopup ? CalendarCard : PreviewCard;
     }
 
     private void AutoHideTick()
@@ -1647,41 +1640,6 @@ public partial class BarWindow : AppBarWindow
         }
     }
 
-    private void ToolsButton_Click(object sender, RoutedEventArgs e)
-    {
-        EndWarm();
-        bool wasOpen = ToolsPopup.IsOpen;
-        if (!wasOpen)
-        {
-            StartOpening(ToolsPopup);
-        }
-
-        ClosePanel();
-
-        if (!wasOpen)
-        {
-            PlacePopup(ToolsPopup, ToolsCard);
-            Activate();
-            ToolsPopup.IsOpen = true;
-        }
-    }
-
-    /// <summary>Kart bırakılacak yerin önünde durmasın: görünmez olunca fare de içinden geçer. Çubuk bu sırada gizlenmez.</summary>
-    private void ToolsContent_DragStarted()
-    {
-        ToolsCard.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(ToolsDragFadeMs)));
-    }
-
-    private void ToolsContent_DragFinished(bool dropped)
-    {
-        ToolsCard.BeginAnimation(OpacityProperty, null);
-        ToolsCard.Opacity = dropped ? 0 : 1;
-        if (dropped)
-        {
-            ClosePopup(ToolsPopup);
-        }
-    }
-
     private static NotifyIcon TrayIconOf(object sender)
     {
         return (NotifyIcon)((FrameworkElement)sender).DataContext;
@@ -1875,7 +1833,6 @@ public partial class BarWindow : AppBarWindow
 
         _previewShowTimer.Stop();
         _previewHideTimer.Stop();
-        _dragOpenTimer.Stop();
         _gapCloseTimer.Stop();
 
         _volumeWatcher?.Dispose();
@@ -2655,7 +2612,7 @@ public partial class BarWindow : AppBarWindow
         _previewHideTimer.Stop();
 
         // Çipin üzerine gelen fare o an arkasında kalan düğmeyi istemiyor, çubuğu açmak istiyor.
-        if (_draggedGroup != null || ClockChipProgress > 0 || !GroupOfTask(button).HasWindows || GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || button.ContextMenu?.IsOpen == true)
+        if (_draggedGroup != null || ClockChipProgress > 0 || !GroupOfTask(button).HasWindows || GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || button.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -2835,10 +2792,6 @@ public partial class BarWindow : AppBarWindow
         {
             PlacePopup(TrayPopup, TrayCard);
         }
-        else if (sender == ToolsCard)
-        {
-            PlacePopup(ToolsPopup, ToolsCard);
-        }
         else if (sender == CalendarCard)
         {
             PlacePopup(CalendarPopup, CalendarCard);
@@ -2864,7 +2817,6 @@ public partial class BarWindow : AppBarWindow
     {
         return popup == GroupPanel ? (PanelCard, GroupsButton)
             : popup == TrayPopup ? (TrayCard, TrayOverflowButton)
-            : popup == ToolsPopup ? (ToolsCard, ToolsButton)
             : popup == CalendarPopup ? (CalendarCard, Clock)
             : popup == QuickPopup ? (QuickPanel, QuickButton)
             : (StartPanel, StartButton);
@@ -3421,7 +3373,7 @@ public partial class BarWindow : AppBarWindow
 
     private bool IsAnyPanelActive()
     {
-        return GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || PreviewPopup.IsOpen || _geniesPlaying > 0;
+        return GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || PreviewPopup.IsOpen || _geniesPlaying > 0;
     }
 
     /// <summary>
@@ -3430,7 +3382,7 @@ public partial class BarWindow : AppBarWindow
     /// </summary>
     private async void PanelButton_MouseEnter(object sender, MouseEventArgs e)
     {
-        Popup popup = sender == StartButton ? StartPopup : sender == GroupsButton ? GroupPanel : sender == ToolsButton ? ToolsPopup : sender == TrayOverflowButton ? TrayPopup
+        Popup popup = sender == StartButton ? StartPopup : sender == GroupsButton ? GroupPanel : sender == TrayOverflowButton ? TrayPopup
             : sender == Clock ? CalendarPopup : QuickPopup;
         // Şarkı kartı açıkken alınan cam onu da içerir; kart açılırken yeniden alınır.
         if (_preparing || ChipPopup.IsOpen || !SystemParameters.ClientAreaAnimation || !_prep.TryGetValue(popup, out PopupPrep? prep)
@@ -3508,7 +3460,7 @@ public partial class BarWindow : AppBarWindow
     {
         await Task.Delay(WarmDelayMs);
 
-        var popups = new List<Popup> { GroupPanel, ToolsPopup };
+        var popups = new List<Popup> { GroupPanel };
         if (_settings.ShowClock)
         {
             popups.Add(CalendarPopup);
@@ -3579,7 +3531,6 @@ public partial class BarWindow : AppBarWindow
     {
         ClosePopup(GroupPanel);
         ClosePopup(TrayPopup);
-        ClosePopup(ToolsPopup);
         ClosePopup(CalendarPopup);
         ClosePopup(QuickPopup);
         ClosePopup(StartPopup);
@@ -3609,7 +3560,7 @@ public partial class BarWindow : AppBarWindow
             EndTaskDrag(commit: false);
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || ToolsPopup.IsOpen || CalendarPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen))
+        else if (e.Key == Key.Escape && (GroupPanel.IsOpen || TrayPopup.IsOpen || CalendarPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen))
         {
             ClosePanel();
             e.Handled = true;
@@ -3837,72 +3788,6 @@ public partial class BarWindow : AppBarWindow
         _settings.Save();
         _runTracker?.Refresh();
     }
-
-    private void ToolsButton_DragEnter(object sender, DragEventArgs e)
-    {
-        // Dosya rafı kartın içinde: sürüklerken açılsın, dosya bırakılacak yeri görsün.
-        if (SetDropEffect(e) && !ToolsPopup.IsOpen)
-        {
-            EndWarm();
-            ClosePanel();
-            PlacePopup(ToolsPopup, ToolsCard);
-            ToolsPopup.IsOpen = true;
-            _dragOpenCard = ToolsCard;
-            _dragOpenTimer.Start();
-        }
-    }
-
-    private void ToolsButton_Drop(object sender, DragEventArgs e)
-    {
-        if (SetDropEffect(e) && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
-        {
-            FileShelf.Shared.Add(paths);
-        }
-        e.Handled = true;
-    }
-
-    private void ToolsButton_DragOver(object sender, DragEventArgs e)
-    {
-        SetDropEffect(e);
-    }
-
-    private void DragOpenTimer_Tick(object? sender, EventArgs e)
-    {
-        const int leftButton = 0x01;
-        if ((GetAsyncKeyState(leftButton) & 0x8000) != 0)
-        {
-            return;
-        }
-
-        _dragOpenTimer.Stop();
-
-        // Bırakıldı. İmleç paneldeyse normal açık panele dön, değilse kapat: etkin olmayan panel kendiliğinden kapanmaz.
-        if (_dragOpenCard != null && IsCursorOver(_dragOpenCard))
-        {
-            Activate();
-        }
-        if (!IsActive || _dragOpenCard == null || !IsCursorOver(_dragOpenCard))
-        {
-            ClosePanel();
-        }
-    }
-
-    private static bool IsCursorOver(FrameworkElement element)
-    {
-        if (PresentationSource.FromVisual(element) == null)
-        {
-            return false;
-        }
-
-        System.Drawing.Point cursor = System.Windows.Forms.Cursor.Position;
-        Point origin = element.PointToScreen(new Point(0, 0));
-        DpiScale dpi = VisualTreeHelper.GetDpi(element);
-        return cursor.X >= origin.X && cursor.X <= origin.X + element.ActualWidth * dpi.DpiScaleX
-            && cursor.Y >= origin.Y && cursor.Y <= origin.Y + element.ActualHeight * dpi.DpiScaleY;
-    }
-
-    [System.Runtime.InteropServices.DllImport("user32")]
-    private static extern short GetAsyncKeyState(int key);
 
     internal static bool SetDropEffect(DragEventArgs e)
     {

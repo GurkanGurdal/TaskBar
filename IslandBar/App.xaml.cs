@@ -138,6 +138,9 @@ public partial class App : Application
         FocusTimer.Shared.Finished += FocusTimer_Finished;
         ReminderStore.Shared.Due += Reminder_Due;
         ReminderStore.Shared.Start();
+        _toolsKeyWatcher = new ToolsKeyWatcher(
+            () => Dispatcher.BeginInvoke(OpenToolsRing),
+            () => Dispatcher.BeginInvoke(() => _toolsRing?.Release()));
 
         TaskbarRecovery.StartWatchdog();
 
@@ -262,6 +265,44 @@ public partial class App : Application
         {
             // Aygıt tam bu sırada çıkarılmış olabilir; sonraki basışta varsayılan yeniden bulunur.
         }
+    }
+
+    private ToolsKeyWatcher? _toolsKeyWatcher;
+    private ToolsRing? _toolsRing;
+    private ToolCardWindow? _toolCard;
+
+    /// <summary>Alt + S: imlecin olduğu yerde araç tekerleği; açık tekerlek ya da kart varsa önce o kapanır.</summary>
+    private void OpenToolsRing()
+    {
+        _toolsRing?.Dismiss();
+        _toolCard?.Dismiss();
+        var ring = new ToolsRing(System.Windows.Forms.Cursor.Position);
+        ring.Chosen += OpenToolCard;
+        ring.Closed += (_, _) =>
+        {
+            if (_toolsRing == ring)
+            {
+                _toolsRing = null;
+            }
+        };
+        _toolsRing = ring;
+        ring.Show();
+        ring.Activate();
+    }
+
+    private void OpenToolCard(ToolKind kind, System.Drawing.Point center)
+    {
+        _toolCard?.Dismiss();
+        var card = new ToolCardWindow(kind, center);
+        card.Closed += (_, _) =>
+        {
+            if (_toolCard == card)
+            {
+                _toolCard = null;
+            }
+        };
+        _toolCard = card;
+        card.Show();
     }
 
     private const int TimerNoticeSeconds = 30;
@@ -438,6 +479,7 @@ public partial class App : Application
         _shellReleased = true;
 
         _trayIcon?.Dispose();
+        _toolsKeyWatcher?.Dispose();
         ScreenshotHistory.Shared.StopWatching();
 
         // Tepsi servisi kapanmadan: Windows çubuğuna giden mesajlar onun üzerinden geçiyor.

@@ -79,6 +79,26 @@ public partial class ToolsPanel : UserControl
         };
     }
 
+    /// <summary>
+    /// Tekerlekten açılınca yalnızca o aracın bölümü görünür (başlık ve ayraçlar olmadan); null tüm kart. Hatırlatıcılar
+    /// burada değil, takvimde.
+    /// </summary>
+    public ToolKind? Only
+    {
+        get => _only;
+        set
+        {
+            _only = value;
+            ToolsTitle.Visibility = value == null ? Visibility.Visible : Visibility.Collapsed;
+            TimerDivider.Visibility = ShotDivider.Visibility = CopiedDivider.Visibility = value == null ? Visibility.Visible : Visibility.Collapsed;
+            UpdateState();
+        }
+    }
+
+    private ToolKind? _only;
+
+    private Visibility SectionVisibility(ToolKind kind) => _only == null || _only == kind ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>Sürükleme başladı: kart bırakılacak yeri kapatmasın.</summary>
     public event Action? DragStarted;
 
@@ -106,8 +126,12 @@ public partial class ToolsPanel : UserControl
         ShotHint.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyHint.Visibility = count > 0 ? Visibility.Collapsed : Visibility.Visible;
 
+        TimerSection.Visibility = SectionVisibility(ToolKind.Timer);
+        ShotSection.Visibility = SectionVisibility(ToolKind.Screenshots);
+        ShelfSection.Visibility = SectionVisibility(ToolKind.Shelf);
+
         int copied = _copied.Items.Count;
-        CopiedSection.Visibility = _copied.IsWatching ? Visibility.Visible : Visibility.Collapsed;
+        CopiedSection.Visibility = _copied.IsWatching || _only == ToolKind.Copied ? SectionVisibility(ToolKind.Copied) : Visibility.Collapsed;
         CopiedCount.Text = copied > 0 ? $"{copied} / {ClipboardHistory.MaxItems}" : string.Empty;
         CopiedClearButton.Visibility = copied > 0 ? Visibility.Visible : Visibility.Collapsed;
         CopiedScroll.Visibility = copied > 0 ? Visibility.Visible : Visibility.Collapsed;
