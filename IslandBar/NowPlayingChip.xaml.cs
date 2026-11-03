@@ -127,8 +127,14 @@ public partial class NowPlayingChip : UserControl
     /// <summary>Hatırlatıcı: kendi gitmez, başka kart onu ezmez.</summary>
     internal bool IsSticky { get; private set; }
 
+    /// <summary>Açık bir kip (Çeviri): kendi gitmez, tıklamak kapatmaz, başka kart gelince yerini verir.</summary>
+    internal bool IsResident { get; private set; }
+
     /// <summary>Hatırlatıcıda düğmeye basıldı: true Tamam, false Ertele. Kart ardından kendini kapatır.</summary>
     public event Action<bool>? ActionChosen;
+
+    /// <summary>Kip kartında Kapat'a basıldı; kip kapanınca kart da gider.</summary>
+    public event Action? CloseChosen;
 
     public bool IsHiding => _isHiding;
 
@@ -169,6 +175,7 @@ public partial class NowPlayingChip : UserControl
         AppId = track.AppId;
         _showSeconds = ShowSeconds;
         IsSticky = false;
+        SetResidentLook(false);
         NoticeActions.Visibility = Visibility.Collapsed;
         TitleText.Text = track.Title;
         ArtistText.Text = track.Artist;
@@ -196,6 +203,7 @@ public partial class NowPlayingChip : UserControl
         AppId = string.Empty;
         _showSeconds = seconds;
         IsSticky = seconds == 0;
+        SetResidentLook(false);
         NoticeActions.Visibility = IsSticky ? Visibility.Visible : Visibility.Collapsed;
         TitleText.Text = title;
         ArtistText.Text = status;
@@ -217,6 +225,27 @@ public partial class NowPlayingChip : UserControl
             UpdateRings();
             RestartDismiss(_showSeconds);
         }
+    }
+
+    /// <summary>
+    /// Açık kip kartı (kullanıcının isteği: çeviri kipi şarkı kartı gibi bir kartla görünsün, Kapat düğmesiyle kapansın,
+    /// kapatılana kadar gitmesin). Yerini <see cref="BarWindow"/> başka kartlara geçici olarak bırakır.
+    /// </summary>
+    internal void SetResident(string glyph, string title, string status)
+    {
+        SetNotice(null, glyph, title, status, waiting: false, seconds: 0);
+        IsSticky = false;
+        SetResidentLook(true);
+        _dismissTimer.Stop();
+    }
+
+    private void SetResidentLook(bool resident)
+    {
+        IsResident = resident;
+        SnoozeButton.Visibility = resident ? Visibility.Collapsed : Visibility.Visible;
+        DoneButton.Visibility = resident ? Visibility.Collapsed : Visibility.Visible;
+        CloseButton.Visibility = resident ? Visibility.Visible : Visibility.Collapsed;
+        Cursor = resident ? Cursors.Arrow : Cursors.Hand;
     }
 
     /// <summary>Halkalar yalnızca onay beklerken ve kart ekrandayken döner.</summary>
@@ -636,7 +665,7 @@ public partial class NowPlayingChip : UserControl
     private void RestartDismiss(int seconds)
     {
         _dismissTimer.Stop();
-        if (IsSticky)
+        if (IsSticky || IsResident)
         {
             return;
         }
@@ -671,8 +700,8 @@ public partial class NowPlayingChip : UserControl
     {
         e.Handled = true;
 
-        // Hatırlatıcı yalnızca düğmeyle kapanır: yanlışlıkla dokunmak onu kaybettirmesin.
-        if (IsSticky)
+        // Hatırlatıcı ve kip kartı yalnızca düğmeyle kapanır: yanlışlıkla dokunmak onu kaybettirmesin.
+        if (IsSticky || IsResident)
         {
             return;
         }
@@ -685,7 +714,7 @@ public partial class NowPlayingChip : UserControl
     {
         // Olay mantıksal ağaçtan çubuğa çıkıp onun menüsünü açmasın; sağ tık yalnızca kapatır.
         e.Handled = true;
-        if (!IsSticky)
+        if (!IsSticky && !IsResident)
         {
             Dismiss();
         }
@@ -699,6 +728,11 @@ public partial class NowPlayingChip : UserControl
     private void Done_Click(object sender, RoutedEventArgs e)
     {
         Choose(done: true);
+    }
+
+    private void Close_Click(object sender, RoutedEventArgs e)
+    {
+        CloseChosen?.Invoke();
     }
 
     private void Choose(bool done)

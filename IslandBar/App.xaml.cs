@@ -293,6 +293,13 @@ public partial class App : Application
     private void OpenToolCard(ToolKind kind, System.Drawing.Point center)
     {
         _toolCard?.Dismiss();
+        if (kind == ToolKind.Translate)
+        {
+            // Kartı yok: kip açılır ya da kapanır.
+            TranslateMode.Shared.Toggle();
+            return;
+        }
+
         var card = new ToolCardWindow(kind, center);
         card.Closed += (_, _) =>
         {
@@ -480,6 +487,7 @@ public partial class App : Application
 
         _trayIcon?.Dispose();
         _toolsKeyWatcher?.Dispose();
+        TranslateMode.Shared.SetOn(false);
         ScreenshotHistory.Shared.StopWatching();
 
         // Tepsi servisi kapanmadan: Windows çubuğuna giden mesajlar onun üzerinden geçiyor.

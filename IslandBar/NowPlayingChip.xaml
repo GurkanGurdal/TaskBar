@@ -160,8 +160,9 @@
                         </Setter>
                     </Style>
                 </StackPanel.Resources>
-                <Button Content="Ertele 10 dk" Click="Snooze_Click" />
-                <Button Content="Tamam" Click="Done_Click" />
+                <Button x:Name="SnoozeButton" Content="Ertele 10 dk" Click="Snooze_Click" />
+                <Button x:Name="DoneButton" Content="Tamam" Click="Done_Click" />
+                <Button x:Name="CloseButton" Content="Kapat" Click="Close_Click" Visibility="Collapsed" />
             </StackPanel>
         </Grid>
     </local:GlassCard>

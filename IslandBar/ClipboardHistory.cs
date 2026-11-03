@@ -48,6 +48,7 @@ public sealed class ClipboardHistory
 
     private readonly DispatcherTimer _settleTimer = new() { Interval = TimeSpan.FromMilliseconds(SettleMs) };
     private HwndSource? _window;
+    private DateTime _ignoreUntil;
 
     private ClipboardHistory()
     {
@@ -82,6 +83,13 @@ public sealed class ClipboardHistory
         }
     }
 
+    /// <summary>Panoyu kısa süre ödünç alan iş (çevirinin Ctrl + C'si) listeye girmesin; geri konan eski içerik de.</summary>
+    public void IgnoreFor(TimeSpan duration)
+    {
+        _ignoreUntil = DateTime.UtcNow + duration;
+        _settleTimer.Stop();
+    }
+
     public void Remove(CopiedText item)
     {
         Items.Remove(item);
@@ -107,7 +115,7 @@ public sealed class ClipboardHistory
 
     private IntPtr Window_Message(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WmClipboardUpdate)
+        if (msg == WmClipboardUpdate && DateTime.UtcNow >= _ignoreUntil)
         {
             // Uygulamalar panoya birkaç biçimi art arda yazıyor; durulunca bir kez okunur.
             _settleTimer.Stop();

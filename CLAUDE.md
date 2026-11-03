@@ -37,6 +37,9 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   Kartlar (`GlassCard`) cam, açılış/kapanış Genie. Ayrı iş parçacıklı animasyonlar, gecikme bütçesi ölçülerek korunur.
 - Araçlar çubukta değil: Alt + S basılı tutulunca imlecin yerinde tekerlek (`ToolsRing`), seçilen aracın kartı orada
   (`ToolCardWindow`, `ToolsPanel.Only`).
+- Çeviri: tekerlekteki kip (`TranslateMode`), seçilen yazı MyMemory ile çevrilir, seçimin altında balon; açıkken
+  şarkı kartının yerinde Kapat düğmeli kalıcı kart (`SetResident`). Google'ın anahtarsız
+  ucu istek engelliyor; tarayıcı gibi görünüp engeli aşma.
 - **Temalar:** Cam (varsayılan, `GlassCapture` ile kendi camı), Beyaz, Grafit. Palet dosyaları `Theme*.xaml`, aynı
   anahtarlar; renkler `StaticResource` (tema değişince çubuklar yeniden açılır). Sabit renk yazma, palete anahtar ekle.
   Camsız temalar `UsesGlass` false; açık zemine özgü davranış `IsLight`'a bağlı. Yeni tema: palet + `BarTheme` +

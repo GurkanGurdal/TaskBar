@@ -16,7 +16,8 @@ public enum ToolKind
     Screenshots,
     Copied,
     Shelf,
-    Reminders
+    Reminders,
+    Translate
 }
 
 /// <summary>
@@ -45,7 +46,8 @@ internal sealed class ToolsRing : Window
         (ToolKind.Screenshots, "", "Ekran görüntüleri"),
         (ToolKind.Copied, "", "Kopyalananlar"),
         (ToolKind.Shelf, "", "Dosya rafı"),
-        (ToolKind.Reminders, "", "Hatırlatıcılar")
+        (ToolKind.Reminders, "", "Hatırlatıcılar"),
+        (ToolKind.Translate, "", "Çeviri")
     ];
 
     private readonly System.Drawing.Point _center;
@@ -78,7 +80,8 @@ internal sealed class ToolsRing : Window
 
             // Seçilince karonun üstünde ada düğmelerinin üzerine gelme zemini.
             var highlight = new Border { CornerRadius = new CornerRadius(TileCorner), Background = Brushes.Transparent };
-            var face = new Grid();
+            // Açık kip (Çeviri) adadaki etkin uygulama gibi soluk zeminde.
+            var face = new Grid { Background = IsToolOn(Tools[i].Kind) ? (Brush)FindResource("ActiveBrush") : Brushes.Transparent };
             face.Children.Add(highlight);
             face.Children.Add(new TextBlock
             {
@@ -99,7 +102,7 @@ internal sealed class ToolsRing : Window
                 CornerRadius = new CornerRadius(TileCorner),
                 BlurRadius = 18,
                 Cursor = Cursors.Hand,
-                ToolTip = Tools[i].Name,
+                ToolTip = ToolName(i),
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = new ScaleTransform(0.6, 0.6),
                 Opacity = 0,
@@ -218,6 +221,16 @@ internal sealed class ToolsRing : Window
         }
     }
 
+    private static bool IsToolOn(ToolKind kind)
+    {
+        return kind == ToolKind.Translate && TranslateMode.Shared.IsOn;
+    }
+
+    private static string ToolName(int index)
+    {
+        return IsToolOn(Tools[index].Kind) ? "Çeviriyi kapat" : Tools[index].Name;
+    }
+
     private static double Angle(int index)
     {
         return -Math.PI / 2 + index * 2 * Math.PI / Tools.Length;
@@ -269,7 +282,7 @@ internal sealed class ToolsRing : Window
         }
 
         Emphasize(index, true);
-        _label.Text = Tools[index].Name;
+        _label.Text = ToolName(index);
         ShowLabel();
     }
 

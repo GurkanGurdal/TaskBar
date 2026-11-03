@@ -280,6 +280,8 @@ public partial class BarWindow : AppBarWindow
             Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged += NetworkInformation_NetworkStatusChanged;
             PrivacyWatch.Shared.Changed += PrivacyWatch_Changed;
             PrivacyWatch_Changed(PrivacyWatch.Shared.Camera, PrivacyWatch.Shared.Microphone);
+            TranslateMode.Shared.Changed += TranslateMode_Changed;
+            TranslateMode_Changed(TranslateMode.Shared.IsOn);
 
             // Windows bildirimleri gibi ana ekranda; her çubukta ayrı kart çıkmasın.
             _nowPlaying = new NowPlayingWatcher();
@@ -313,6 +315,8 @@ public partial class BarWindow : AppBarWindow
                 RefreshGlass();
             }
         };
+        Chip.CloseChosen += () => TranslateMode.Shared.SetOn(false);
+        _residentTimer.Tick += (_, _) => ShowResidentChip();
         Chip.ActionChosen += done =>
         {
             Action<bool>? chosen = _noticeChosen;
@@ -1839,6 +1843,8 @@ public partial class BarWindow : AppBarWindow
         _runTracker?.Dispose();
         Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= NetworkInformation_NetworkStatusChanged;
         PrivacyWatch.Shared.Changed -= PrivacyWatch_Changed;
+        TranslateMode.Shared.Changed -= TranslateMode_Changed;
+        _residentTimer.Stop();
 
         TaskList.ItemsSource = null;
         ((INotifyCollectionChanged)_taskWindows).CollectionChanged -= TaskWindows_CollectionChanged;
@@ -3064,6 +3070,43 @@ public partial class BarWindow : AppBarWindow
             return;
         }
 
+        ChipPopup.IsOpen = true;
+    }
+
+    private readonly DispatcherTimer _residentTimer = new() { Interval = TimeSpan.FromMilliseconds(ResidentCheckMs) };
+    private const int ResidentCheckMs = 600;
+
+    /// <summary>
+    /// Çeviri kipi açıkken kartı kalıcı (kullanıcının isteği): şarkı, Claude ya da bir kart açılınca yerini verir, o
+    /// gidince geri gelir. Yalnızca ana ekranda.
+    /// </summary>
+    private void TranslateMode_Changed(bool on)
+    {
+        if (on)
+        {
+            _residentTimer.Start();
+            ShowResidentChip();
+        }
+        else
+        {
+            _residentTimer.Stop();
+            if (ChipPopup.IsOpen && Chip.IsResident)
+            {
+                Chip.Dismiss();
+            }
+        }
+    }
+
+    private void ShowResidentChip()
+    {
+        if (!TranslateMode.Shared.IsOn || !IsLoaded || ChipPopup.IsOpen || _fullScreenOnThisBar || IsAnyPanelActive()
+            || VolumePopup.IsOpen || PreviewPopup.IsOpen)
+        {
+            return;
+        }
+
+        Chip.SetResident("", "Çeviri modu", "Seçtiğin yazı çevrilir");
+        _noticeClicked = null;
         ChipPopup.IsOpen = true;
     }
 
