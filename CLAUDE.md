@@ -48,7 +48,7 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
 - Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
   (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni
   dosyalarla çıkar. Kutuda yalnızca dönüşmüş haller (`FileConverter.Root`); sürüklenince bırakılan yere taşınır, kutuda
-  kalanlar kapatınca Geri Dönüşüm Kutusu'na. Dönüşümler kurulu bir şey gerektirmez (`FileConversions`; resimden PDF kendi `ImagePdf`'imiz). Reddedilenler:
+  kalanlar kapatınca Geri Dönüşüm Kutusu'na. Dönüşümler kurulu bir şey gerektirmez (`FileConversions`: WIC, Office, Windows PDF, Media Foundation; resimden PDF `ImagePdf`, ICO `IconFile` bizim). Reddedilenler:
   Alt + sağ tık menüsü, "orijinal kalsın mı" sorusu, halkaya dürülen deste.
 - **Temalar:** Cam (varsayılan, `GlassCapture` ile kendi camı), Beyaz, Grafit. Palet dosyaları `Theme*.xaml`, aynı
   anahtarlar; renkler `StaticResource` (tema değişince çubuklar yeniden açılır). Sabit renk yazma, palete anahtar ekle.

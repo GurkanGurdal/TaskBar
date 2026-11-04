@@ -22,12 +22,16 @@ internal enum ConversionKind
     ImagePdf,
 
     /// <summary>Bütün resimler tek PDF'te, sırayla birer sayfa.</summary>
-    ImagesPdf
+    ImagesPdf,
+
+    /// <summary>Office belgesi önce PDF'e, sonra her sayfası (slaytı) bir PNG'ye.</summary>
+    DocumentPages
 }
 
 /// <param name="Label">Menüde.</param>
 /// <param name="Short">Çubuktaki kartta, "rapor.pdf → Word".</param>
-internal sealed record ConversionTarget(string Label, string Short, string Extension, ConversionKind Kind);
+/// <param name="Format">Office'in kayıt biçimi kodu (Word, Excel, PowerPoint hedeflerinde).</param>
+internal sealed record ConversionTarget(string Label, string Short, string Extension, ConversionKind Kind, int Format = 0);
 
 /// <summary>
 /// Dosya dönüştürmeler, kurulu bir şey gerektirmeden (kullanıcının seçtiği dört tür): resimler Windows'un kodlayıcılarıyla
@@ -43,11 +47,20 @@ internal static class FileConversions
     /// <summary>PDF sayfası 96 DPI ölçüsünün iki katı (192 DPI): ekranda keskin, dosya makul.</summary>
     private const double PdfScale = 2;
 
-    // Office sabitleri.
+    // Office sabitleri: Word wdSaveFormat, Excel xlFileFormat, PowerPoint ppSaveAsFileType.
+    private const int WordText = 2;
+    private const int WordRtf = 6;
     private const int WordDocx = 12;
     private const int WordPdf = 17;
+    private const int WordOdt = 23;
     private const int ExcelPdf = 0;
+    private const int ExcelXlsx = 51;
+    private const int ExcelOds = 60;
+    private const int ExcelCsvUtf8 = 62;
+    private const int PowerPointPptx = 24;
     private const int PowerPointPdf = 32;
+    private const int PowerPointOdp = 35;
+    private const int Utf8 = 65001;
     private const int NoAlerts = 0;
     private const int PowerPointNoAlerts = 1;
     private const int MacrosOff = 3;
@@ -58,24 +71,40 @@ internal static class FileConversions
     private static readonly ConversionTarget Bmp = new("BMP resmi", "BMP", ".bmp", ConversionKind.Image);
     private static readonly ConversionTarget Tiff = new("TIFF resmi", "TIFF", ".tif", ConversionKind.Image);
     private static readonly ConversionTarget Gif = new("GIF resmi", "GIF", ".gif", ConversionKind.Image);
+    private static readonly ConversionTarget Ico = new("Simge (.ico)", "ICO", ".ico", ConversionKind.Image);
     private static readonly ConversionTarget ImageToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.ImagePdf);
     private static readonly ConversionTarget ImagesToOnePdf = new("Tek PDF (hepsi bir arada)", "PDF", ".pdf", ConversionKind.ImagesPdf);
-    private static readonly ConversionTarget WordFromPdf = new("Word belgesi (.docx)", "Word", ".docx", ConversionKind.Word);
+    private static readonly ConversionTarget WordFromPdf = new("Word belgesi (.docx)", "Word", ".docx", ConversionKind.Word, WordDocx);
     private static readonly ConversionTarget PdfPages = new("PNG resimleri (her sayfa)", "PNG", ".png", ConversionKind.PdfPages);
-    private static readonly ConversionTarget WordToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.Word);
-    private static readonly ConversionTarget WordToDocx = new("Word belgesi (.docx)", "Word", ".docx", ConversionKind.Word);
-    private static readonly ConversionTarget ExcelToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.Excel);
-    private static readonly ConversionTarget PowerPointToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.PowerPoint);
+    private static readonly ConversionTarget WordToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.Word, WordPdf);
+    private static readonly ConversionTarget WordToDocx = new("Word belgesi (.docx)", "Word", ".docx", ConversionKind.Word, WordDocx);
+    private static readonly ConversionTarget WordToRtf = new("Zengin metin (.rtf)", "RTF", ".rtf", ConversionKind.Word, WordRtf);
+    private static readonly ConversionTarget WordToOdt = new("OpenDocument metni (.odt)", "ODT", ".odt", ConversionKind.Word, WordOdt);
+    private static readonly ConversionTarget WordToText = new("Düz metin (.txt)", "TXT", ".txt", ConversionKind.Word, WordText);
+    private static readonly ConversionTarget DocumentPages = new("PNG resimleri (her sayfa)", "PNG", ".png", ConversionKind.DocumentPages);
+    private static readonly ConversionTarget SlidePages = new("PNG resimleri (her slayt)", "PNG", ".png", ConversionKind.DocumentPages);
+    private static readonly ConversionTarget ExcelToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.Excel, ExcelPdf);
+    private static readonly ConversionTarget ExcelToXlsx = new("Excel çalışma kitabı (.xlsx)", "Excel", ".xlsx", ConversionKind.Excel, ExcelXlsx);
+    private static readonly ConversionTarget ExcelToCsv = new("CSV (ilk sayfa)", "CSV", ".csv", ConversionKind.Excel, ExcelCsvUtf8);
+    private static readonly ConversionTarget ExcelToOds = new("OpenDocument tablosu (.ods)", "ODS", ".ods", ConversionKind.Excel, ExcelOds);
+    private static readonly ConversionTarget PowerPointToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.PowerPoint, PowerPointPdf);
+    private static readonly ConversionTarget PowerPointToPptx = new("PowerPoint sunusu (.pptx)", "PowerPoint", ".pptx", ConversionKind.PowerPoint, PowerPointPptx);
+    private static readonly ConversionTarget PowerPointToOdp = new("OpenDocument sunusu (.odp)", "ODP", ".odp", ConversionKind.PowerPoint, PowerPointOdp);
     private static readonly ConversionTarget Mp3 = new("MP3 ses", "MP3", ".mp3", ConversionKind.Media);
     private static readonly ConversionTarget M4a = new("M4A ses", "M4A", ".m4a", ConversionKind.Media);
     private static readonly ConversionTarget Wav = new("WAV ses", "WAV", ".wav", ConversionKind.Media);
     private static readonly ConversionTarget Wma = new("WMA ses", "WMA", ".wma", ConversionKind.Media);
+    private static readonly ConversionTarget Flac = new("FLAC ses (kayıpsız)", "FLAC", ".flac", ConversionKind.Media);
     private static readonly ConversionTarget Mp4 = new("MP4 video", "MP4", ".mp4", ConversionKind.Media);
     private static readonly ConversionTarget Wmv = new("WMV video", "WMV", ".wmv", ConversionKind.Media);
 
-    private static readonly ConversionTarget[] ImageTargets = [Png, Jpeg, Bmp, Tiff, Gif, ImageToPdf];
-    private static readonly ConversionTarget[] AudioTargets = [Mp3, M4a, Wav, Wma];
+    private static readonly ConversionTarget[] ImageTargets = [Png, Jpeg, Bmp, Tiff, Gif, Ico, ImageToPdf];
+    private static readonly ConversionTarget[] AudioTargets = [Mp3, M4a, Wav, Wma, Flac];
     private static readonly ConversionTarget[] VideoTargets = [Mp4, Wmv, Mp3, M4a];
+
+    private static readonly string[] WordExtensions = [".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf", ".odt", ".txt", ".htm", ".html"];
+    private static readonly string[] ExcelExtensions = [".xls", ".xlsx", ".xlsm", ".xlsb", ".ods", ".csv"];
+    private static readonly string[] PowerPointExtensions = [".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".odp"];
 
     /// <summary>Kaynak uzantı → olabilecek hedefler; dosyanın kendi biçimi de listede (birden çok dosyada atlanır).</summary>
     private static readonly Dictionary<string, ConversionTarget[]> TargetsByExtension = Build();
@@ -93,10 +122,10 @@ internal static class FileConversions
 
         Add(ImageTargets, ".png", ".jpg", ".jpeg", ".jpe", ".jfif", ".bmp", ".dib", ".gif", ".tif", ".tiff", ".heic", ".heif", ".hif",
             ".avif", ".webp", ".jxr", ".wdp", ".ico", ".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf");
-        Add([WordFromPdf, PdfPages], ".pdf");
-        Add([WordToPdf, WordToDocx], ".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf", ".odt");
-        Add([ExcelToPdf], ".xls", ".xlsx", ".xlsm", ".xlsb", ".ods");
-        Add([PowerPointToPdf], ".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".odp");
+        Add([WordFromPdf, PdfPages, WordToText], ".pdf");
+        Add([WordToPdf, WordToDocx, WordToRtf, WordToOdt, WordToText, DocumentPages], WordExtensions);
+        Add([ExcelToPdf, ExcelToXlsx, ExcelToCsv, ExcelToOds, DocumentPages], ExcelExtensions);
+        Add([PowerPointToPdf, PowerPointToPptx, PowerPointToOdp, SlidePages], PowerPointExtensions);
         Add(AudioTargets, ".mp3", ".m4a", ".wav", ".wma", ".aac", ".flac");
         Add(VideoTargets, ".mp4", ".m4v", ".mov", ".wmv", ".avi", ".mkv");
         return map;
@@ -148,9 +177,10 @@ internal static class FileConversions
         {
             ConversionKind.Image => OnSta(() => ConvertImage(file, folder, target)),
             ConversionKind.Word => OnSta(() => ConvertWithWord(file, folder, target)),
-            ConversionKind.Excel => OnSta(() => ConvertWithExcel(file, folder)),
-            ConversionKind.PowerPoint => OnSta(() => ConvertWithPowerPoint(file, folder)),
+            ConversionKind.Excel => OnSta(() => ConvertWithExcel(file, folder, target)),
+            ConversionKind.PowerPoint => OnSta(() => ConvertWithPowerPoint(file, folder, target)),
             ConversionKind.PdfPages => RenderPdfPagesAsync(file, folder, progress, token),
+            ConversionKind.DocumentPages => RenderDocumentPagesAsync(file, folder, progress, token),
             ConversionKind.ImagePdf or ConversionKind.ImagesPdf => CombineImagesAsync([file], folder, progress),
             _ => TranscodeAsync(file, folder, target, progress, token)
         };
@@ -213,6 +243,13 @@ internal static class FileConversions
     private static string ConvertImage(string file, string folder, ConversionTarget target)
     {
         BitmapSource image = LoadImage(file);
+        if (target.Extension == ".ico")
+        {
+            string icon = FreePath(file, ".ico", folder);
+            IconFile.Write(icon, image);
+            return icon;
+        }
+
         BitmapEncoder encoder;
         switch (target.Extension)
         {
@@ -347,7 +384,15 @@ internal static class FileConversions
             document = word.Documents.Open(FileName: file, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false,
                 PasswordDocument: "\u0001", Visible: false, NoEncodingDialog: true);
             string output = FreePath(file, target.Extension, folder);
-            document.SaveAs2(FileName: output, FileFormat: target.Extension == ".pdf" ? WordPdf : WordDocx, AddToRecentFiles: false);
+            if (target.Format == WordText)
+            {
+                // Düz metin UTF-8: Türkçe karakterler her yerde doğru açılsın.
+                document.SaveAs2(FileName: output, FileFormat: WordText, AddToRecentFiles: false, Encoding: Utf8);
+            }
+            else
+            {
+                document.SaveAs2(FileName: output, FileFormat: target.Format, AddToRecentFiles: false);
+            }
             return output;
         }
         finally
@@ -360,7 +405,8 @@ internal static class FileConversions
         }
     }
 
-    private static string ConvertWithExcel(string file, string folder)
+    /// <summary>PDF bütün sayfalar; CSV yalnızca ilk sayfa (biçim tek sayfa tutar), UTF-8.</summary>
+    private static string ConvertWithExcel(string file, string folder, ConversionTarget target)
     {
         dynamic excel = Office("Excel.Application");
         bool ours = excel.Workbooks.Count == 0 && !excel.Visible;
@@ -371,8 +417,19 @@ internal static class FileConversions
             excel.AutomationSecurity = MacrosOff;
             workbook = excel.Workbooks.Open(Filename: file, UpdateLinks: 0, ReadOnly: true, Password: "\u0001",
                 IgnoreReadOnlyRecommended: true, Notify: false, AddToMru: false);
-            string output = FreePath(file, ".pdf", folder);
-            workbook.ExportAsFixedFormat(Type: ExcelPdf, Filename: output);
+            string output = FreePath(file, target.Extension, folder);
+            if (target.Format == ExcelPdf)
+            {
+                workbook.ExportAsFixedFormat(Type: ExcelPdf, Filename: output);
+            }
+            else
+            {
+                if (target.Format == ExcelCsvUtf8)
+                {
+                    workbook.Worksheets.Item(1).Activate();
+                }
+                workbook.SaveAs(Filename: output, FileFormat: target.Format, AddToMru: false);
+            }
             return output;
         }
         finally
@@ -386,7 +443,7 @@ internal static class FileConversions
     }
 
     /// <summary>PowerPoint tek kopya çalışır: açıksa onun içinde, pencere açmadan.</summary>
-    private static string ConvertWithPowerPoint(string file, string folder)
+    private static string ConvertWithPowerPoint(string file, string folder, ConversionTarget target)
     {
         dynamic powerPoint = Office("PowerPoint.Application");
         bool ours = powerPoint.Presentations.Count == 0 && powerPoint.Visible == 0;
@@ -396,8 +453,8 @@ internal static class FileConversions
             powerPoint.DisplayAlerts = PowerPointNoAlerts;
             powerPoint.AutomationSecurity = MacrosOff;
             presentation = powerPoint.Presentations.Open(FileName: file, ReadOnly: -1, Untitled: 0, WithWindow: 0);
-            string output = FreePath(file, ".pdf", folder);
-            presentation.SaveAs(FileName: output, FileFormat: PowerPointPdf);
+            string output = FreePath(file, target.Extension, folder);
+            presentation.SaveAs(FileName: output, FileFormat: target.Format);
             return output;
         }
         finally
@@ -406,6 +463,36 @@ internal static class FileConversions
             if (ours)
             {
                 powerPoint.Quit();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Office belgesinin sayfaları (slaytları) PNG: belge önce geçici bir PDF'e, sonra PDF sayfaları gibi. Adlandırma
+    /// PDF sayfalarıyla aynı ("Sayfa 1.png"). Geçici PDF iş bitince silinir.
+    /// </summary>
+    private static async Task<string> RenderDocumentPagesAsync(string file, string folder, IProgress<double> progress, CancellationToken token)
+    {
+        string temporary = Path.Combine(folder, ".pdf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporary);
+        try
+        {
+            string extension = Path.GetExtension(file);
+            string pdf = await OnSta(() =>
+                ExcelExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase) ? ConvertWithExcel(file, temporary, ExcelToPdf)
+                : PowerPointExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase) ? ConvertWithPowerPoint(file, temporary, PowerPointToPdf)
+                : ConvertWithWord(file, temporary, WordToPdf));
+            return await RenderPdfPagesAsync(pdf, folder, progress, token, nameFrom: file);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(temporary, recursive: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // PDF okuyucusu dosyayı bırakmadıysa geçici klasör bekleme yerinde kalır; kutuda görünmez.
             }
         }
     }
@@ -419,11 +506,12 @@ internal static class FileConversions
 
     #region PDF pages
     /// <summary>Tek sayfa "ad.png"; çok sayfa "ad" klasöründe "Sayfa 1.png" ... (kullanıcının seçtiği hedef: her sayfa).</summary>
-    private static async Task<string> RenderPdfPagesAsync(string file, string folder, IProgress<double> progress, CancellationToken token)
+    /// <param name="nameFrom">Çıktının adını aldığı dosya (Office belgesinin geçici PDF'inde asıl belge).</param>
+    private static async Task<string> RenderPdfPagesAsync(string file, string folder, IProgress<double> progress, CancellationToken token, string? nameFrom = null)
     {
         PdfDocument pdf = await PdfDocument.LoadFromFileAsync(await StorageFile.GetFileFromPathAsync(file));
         uint count = pdf.PageCount;
-        string output = count == 1 ? FreePath(file, ".png", folder) : FreePath(file, "", folder);
+        string output = count == 1 ? FreePath(nameFrom ?? file, ".png", folder) : FreePath(nameFrom ?? file, "", folder);
         StorageFolder pages;
         if (count == 1)
         {
@@ -462,6 +550,7 @@ internal static class FileConversions
             ".m4a" => MediaEncodingProfile.CreateM4a(AudioEncodingQuality.High),
             ".wav" => MediaEncodingProfile.CreateWav(AudioEncodingQuality.High),
             ".wma" => MediaEncodingProfile.CreateWma(AudioEncodingQuality.High),
+            ".flac" => MediaEncodingProfile.CreateFlac(AudioEncodingQuality.High),
             ".wmv" => MediaEncodingProfile.CreateWmv(VideoEncodingQuality.Auto),
             _ => MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Auto)
         };
