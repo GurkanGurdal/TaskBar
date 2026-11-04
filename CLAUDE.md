@@ -45,6 +45,9 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   çevrilir, seçimin altında balon; açıkken
   şarkı kartının yerinde Kapat düğmeli kalıcı kart (`SetResident`). Google'ın anahtarsız
   ucu istek engelliyor; tarayıcı gibi görünüp engeli aşma.
+- Sözler: tekerlekteki kip (`LyricsMode`), Spotify'da çalan şarkının zamanlı sözleri LRCLIB'den, şarkı kartının yerinde
+  altyazı şeridi (`LyricsBand`); ikinci ekran varsa bir kez sorulur, evetse orada tam ekran Poster (`LyricsStage`).
+  Spotify'ın kendi söz ucu kullanılmaz (oturum anahtarı ister).
 - Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
   (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni
   dosyalarla çıkar. Kutuda yalnızca dönüşmüş haller (`FileConverter.Root`); sürüklenince bırakılan yere taşınır, kutuda

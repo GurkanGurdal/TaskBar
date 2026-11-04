@@ -25,6 +25,13 @@
     <SolidColorBrush x:Key="DragBadgeFill" Color="#F02A2B2F" />
     <SolidColorBrush x:Key="DragBadgeText" Color="#EDEDF0" />
     <SolidColorBrush x:Key="DragBadgeEdge" Color="#26FFFFFF" />
+    <!-- İkinci ekrandaki söz sahnesi her temada karanlık: ekran kararır (kullanıcının tarifi). -->
+    <SolidColorBrush x:Key="LyricsStageFill" Color="#07070A" />
+    <SolidColorBrush x:Key="LyricsStageText" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="LyricsStageEdge" Color="#12FFFFFF" />
+    <SolidColorBrush x:Key="LyricsStageMuted" Color="#8CFFFFFF" />
+    <SolidColorBrush x:Key="LyricsStageDim" Color="#60FFFFFF" />
+    <SolidColorBrush x:Key="LyricsStageButton" Color="#1CFFFFFF" />
     <SolidColorBrush x:Key="OnAccentHover" Color="#14000000" />
     <SolidColorBrush x:Key="OnAccentDivider" Color="#26000000" />
     <SolidColorBrush x:Key="FolderGradient" Color="#F2A93B" />

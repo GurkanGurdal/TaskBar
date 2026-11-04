@@ -35,6 +35,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     // Başka uygulamanın ayar dosyasına yazdığı için kullanıcı açıklamayı okuyup kendisi açar.
     private bool _showClaudeChip;
     private bool _showVolumeChip = true;
+    private int _lyricsScreen;
     private bool _keepScreenshots = true;
     private bool _keepCopiedText = true;
     private BarTheme _theme = BarTheme.Glass;
@@ -134,6 +135,16 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _showVolumeChip;
         set => SetField(ref _showVolumeChip, value);
+    }
+
+    /// <summary>
+    /// Sözler kipi ikinci ekran varken nerede açılsın: 0 sor (bir kez, "bir daha sorma" denene dek), 1 ikinci ekranda tam
+    /// ekran, 2 çubukta altyazı. Ayarlar'dan değişir.
+    /// </summary>
+    public int LyricsScreen
+    {
+        get => _lyricsScreen;
+        set => SetField(ref _lyricsScreen, Math.Clamp(value, 0, 2));
     }
 
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();

@@ -910,6 +910,7 @@ public partial class BarWindow : AppBarWindow
         if (Screen.Primary)
         {
             ConvertCard.Current?.FollowBar(IsIslandOffScreen());
+            LyricsMode.Shared.FollowBar(IsIslandOffScreen());
         }
 
         // Başlat kontrolü süreç adı okuyor, pencereleri dolaşmak da sistem çağrısı; imleç kadar sık gerekmiyor.
@@ -3435,7 +3436,10 @@ public partial class BarWindow : AppBarWindow
     }
 
     /// <summary>Dönüştür kartı şarkı kartının yerinde duruyor (ana ekran): şarkı, Claude ve çeviri kartı çıkmaz.</summary>
-    private bool IsChipSpotTaken => Screen.Primary && ConvertCard.Current != null;
+    private bool IsChipSpotTaken => Screen.Primary && (ConvertCard.Current != null || LyricsMode.Shared.HoldsChipSpot);
+
+    /// <summary>Bu ekranda tam ekran bir pencere var (çubuk geri çekildi).</summary>
+    internal bool IsFullScreenHere => _fullScreenOnThisBar;
 
     /// <summary>Dönüştür kartı açılıyor: şarkı ya da çeviri kartı yerini verir; hatırlatıcı kalır.</summary>
     internal void YieldChipSpot()

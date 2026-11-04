@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -18,7 +18,8 @@ public enum ToolKind
     Shelf,
     Reminders,
     Translate,
-    Convert
+    Convert,
+    Lyrics
 }
 
 /// <summary>
@@ -49,7 +50,8 @@ internal sealed class ToolsRing : Window
         (ToolKind.Shelf, "", "Dosya rafı"),
         (ToolKind.Convert, "", "Dönüştür"),
         (ToolKind.Reminders, "", "Hatırlatıcılar"),
-        (ToolKind.Translate, "", "Çeviri")
+        (ToolKind.Translate, "", "Çeviri"),
+        (ToolKind.Lyrics, "", "Sözler")
     ];
 
     private readonly System.Drawing.Point _center;
@@ -230,13 +232,19 @@ internal sealed class ToolsRing : Window
 
     private static bool IsToolOn(ToolKind kind)
     {
-        return kind == ToolKind.Translate && TranslateMode.Shared.IsOn || kind == ToolKind.Convert && ConvertCard.Current != null;
+        return kind == ToolKind.Translate && TranslateMode.Shared.IsOn || kind == ToolKind.Convert && ConvertCard.Current != null
+            || kind == ToolKind.Lyrics && LyricsMode.Shared.IsOn;
     }
 
     private static string ToolName(int index)
     {
         return !IsToolOn(Tools[index].Kind) ? Tools[index].Name
-            : Tools[index].Kind == ToolKind.Translate ? "Çeviriyi kapat" : "Dönüştürmeyi kapat";
+            : Tools[index].Kind switch
+            {
+                ToolKind.Translate => "Çeviriyi kapat",
+                ToolKind.Lyrics => "Sözleri kapat",
+                _ => "Dönüştürmeyi kapat"
+            };
     }
 
     private static double Angle(int index)

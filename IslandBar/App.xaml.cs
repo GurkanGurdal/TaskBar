@@ -143,6 +143,10 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(OpenSettings), null, Timeout.Infinite, false);
 
         ClaudeHook.Listen(note => Dispatcher.BeginInvoke(() => ShowClaudeNote(note)));
+        LyricsMode.Shared.PlaceOf = () => _bars.FirstOrDefault(bar => bar.Screen.Primary) is { } bar && bar.TryGetIslandRestRect(out System.Drawing.Rectangle island)
+            ? new LyricsPlace(island, bar.AppBarEdge, bar.IsIslandHidden, bar.IsFullScreenHere)
+            : null;
+        LyricsMode.Shared.Showing += () => _bars.FirstOrDefault(bar => bar.Screen.Primary)?.YieldChipSpot();
         FocusTimer.Shared.Finished += FocusTimer_Finished;
         ReminderStore.Shared.Due += Reminder_Due;
         ReminderStore.Shared.Start();
@@ -306,6 +310,34 @@ public partial class App : Application
         {
             // Kartı yok: kip açılır ya da kapanır.
             TranslateMode.Shared.Toggle();
+            return;
+        }
+        if (kind == ToolKind.Lyrics)
+        {
+            // Kartı yok: kip açılır ya da kapanır. İkinci ekran varsa nerede açılacağı bir kez sorulur (kullanıcının seçimi).
+            if (LyricsMode.Shared.IsOn)
+            {
+                LyricsMode.Shared.SetOn(false);
+            }
+            else if (LyricsMode.SecondScreen() == null || _settings!.LyricsScreen == 2)
+            {
+                LyricsMode.Shared.Start(onSecondScreen: false);
+            }
+            else if (_settings.LyricsScreen == 1)
+            {
+                LyricsMode.Shared.Start(onSecondScreen: true);
+            }
+            else
+            {
+                new LyricsPrompt(center, (second, remember) =>
+                {
+                    if (remember)
+                    {
+                        _settings.LyricsScreen = second ? 1 : 2;
+                    }
+                    LyricsMode.Shared.Start(second);
+                }).Show();
+            }
             return;
         }
         if (kind == ToolKind.Convert)
@@ -527,6 +559,7 @@ public partial class App : Application
         _trayIcon?.Dispose();
         _toolsKeyWatcher?.Dispose();
         TranslateMode.Shared.SetOn(false);
+        LyricsMode.Shared.SetOn(false);
         ScreenshotHistory.Shared.StopWatching();
 
         // Tepsi servisi kapanmadan: Windows çubuğuna giden mesajlar onun üzerinden geçiyor.

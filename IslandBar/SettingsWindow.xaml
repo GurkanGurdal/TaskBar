@@ -91,6 +91,12 @@
                            Foreground="#606060"
                            TextWrapping="Wrap"
                            Text="Kapalıyken Windows'un kendi göstergesi çıkar." />
+                <TextBlock Text="İkinci ekran varken şarkı sözleri" Margin="0,16,0,4" />
+                <ComboBox Width="260" HorizontalAlignment="Left" SelectedIndex="{Binding LyricsScreen}">
+                    <ComboBoxItem Content="Sor" />
+                    <ComboBoxItem Content="İkinci ekranda tam ekran" />
+                    <ComboBoxItem Content="Çubuğun üstünde altyazı" />
+                </ComboBox>
                 <CheckBox x:Name="ClockCheck" Content="Saati göster" Margin="0,16,0,0" IsChecked="{Binding ShowClock}" />
                 <CheckBox Content="Tarihi göster"
                           Margin="20,6,0,0"
