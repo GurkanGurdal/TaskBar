@@ -12,6 +12,9 @@ internal sealed record LyricLine(TimeSpan At, string Text);
 internal sealed record Lyrics(IReadOnlyList<LyricLine> Lines, string? Problem)
 {
     public static Lyrics Failed(string problem) => new([], problem);
+
+    /// <summary>Bağlantı sorunu ya da servis meşgul: birazdan yeniden denenir (kalıcı değil).</summary>
+    public bool Transient { get; init; }
 }
 
 /// <summary>
@@ -54,12 +57,12 @@ internal static partial class LyricsSource
         }
         catch (HttpRequestException e) when (e.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            return Lyrics.Failed("Söz servisi şimdi meşgul");
+            return Lyrics.Failed("Söz servisi şimdi meşgul") with { Transient = true };
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException && !token.IsCancellationRequested)
         {
             ManagedShell.Common.Logging.ShellLogger.Warning($"LyricsSource: {e.Message}");
-            return Lyrics.Failed("Sözlere ulaşılamadı");
+            return Lyrics.Failed("Sözlere ulaşılamadı") with { Transient = true };
         }
 
         Remember(key, found);

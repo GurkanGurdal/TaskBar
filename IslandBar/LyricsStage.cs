@@ -61,10 +61,37 @@ internal sealed class LyricsStage : Window
     private StackPanel? _block;
     private bool _playing = true;
 
+    /// <summary>Çerçeve kipleri (kullanıcının seçtikleri; Ayarlar'da): 0 İkili tur, 1 Kenar ekolayzır, 2 Lunapark.</summary>
+    public const int FrameChasers = 0;
+    public const int FrameEqualizer = 1;
+    public const int FrameMarquee = 2;
+
+    private const double BarSpacing = 26;
+    private const double BarLine = 3;
+    private const double BarMin = 3;
+    private const double BarMax = 46;
+    private const double DotSpacing = 24;
+    private const double DotSize = 4.5;
+    private const double MarqueeSeconds = 4;
+    private const double MarqueeTail = 0.11;
+
+    private int _frameStyle;
+    private readonly List<(Shape Shape, Point At, Vector Inward, double Along, double Value)> _parts = [];
+    private AudioEndpoint.Meter? _meter;
+    private bool _animating;
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    private double _left;
+    private double _right;
+    private double _ceiling = MinCeiling;
+    private const double MinCeiling = 0.04;
+    private const double CeilingFall = 0.996;
+
     /// <param name="bounds">Ekranın tamamı, piksel.</param>
-    public LyricsStage(System.Drawing.Rectangle bounds, Action close)
+    /// <param name="frameStyle"><see cref="FrameChasers"/>, <see cref="FrameEqualizer"/> ya da <see cref="FrameMarquee"/>.</param>
+    public LyricsStage(System.Drawing.Rectangle bounds, int frameStyle, Action close)
     {
         _bounds = bounds;
+        _frameStyle = frameStyle;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
@@ -162,6 +189,7 @@ internal sealed class LyricsStage : Window
     protected override void OnClosed(EventArgs e)
     {
         _idle.Stop();
+        StopParts();
         base.OnClosed(e);
     }
 
@@ -195,11 +223,29 @@ internal sealed class LyricsStage : Window
         ShowLine(view.Text, view.LineLength);
     }
 
-    /// <summary>Kenar çizgisi ve iki parça: parçalar çizginin üstünde sürekli döner (sürekli animasyon, kullanıcı istedi).</summary>
+    /// <summary>Ayar değişti: çerçeve yeniden kurulur.</summary>
+    public void SetFrame(int frameStyle)
+    {
+        if (frameStyle == _frameStyle)
+        {
+            return;
+        }
+
+        _frameStyle = frameStyle;
+        LayoutFrame();
+    }
+
+    /// <summary>
+    /// Çerçeve: İkili turda ince kenar çizgisi ve üstünde iki karşılıklı parça (kesik çizgi, sürekli döner); kenar
+    /// ekolayzırında kenar boyunca içe bakan kısa çubuklar ses düzeyiyle uzar; Lunaparkta kenarda noktalar, üstlerinden
+    /// sırayla bir ışık dalgası geçer. Sürekli animasyon (kullanıcı istedi); renk kapaktan.
+    /// </summary>
     private void LayoutFrame()
     {
+        StopParts();
         double width = Math.Max(0, _frame.ActualWidth - 2 * FrameInset);
         double height = Math.Max(0, _frame.ActualHeight - 2 * FrameInset);
+        double perimeter = 2 * (width + height) - (8 - 2 * Math.PI) * FrameCorner;
         foreach (Rectangle line in new[] { _edge, _chasers })
         {
             line.Width = width;
@@ -208,15 +254,156 @@ internal sealed class LyricsStage : Window
             Canvas.SetTop(line, FrameInset);
         }
 
-        // Kesik çizgi uzunlukları çizgi kalınlığı biriminde; çevre köşelerin yayıyla.
-        double perimeter = 2 * (width + height) - (8 - 2 * Math.PI) * FrameCorner;
-        double units = perimeter / ChaserLine;
-        double dash = units * ChaserShare;
-        double gap = units / 2 - dash;
-        _chasers.StrokeDashArray = [dash, gap, dash, gap];
-        if (SystemParameters.ClientAreaAnimation)
+        _edge.Visibility = _frameStyle == FrameMarquee ? Visibility.Collapsed : Visibility.Visible;
+        _chasers.Visibility = _frameStyle == FrameChasers ? Visibility.Visible : Visibility.Collapsed;
+        if (perimeter <= 0)
         {
-            _chasers.BeginAnimation(Shape.StrokeDashOffsetProperty, new DoubleAnimation(0, -units, TimeSpan.FromSeconds(ChaseSeconds)) { RepeatBehavior = RepeatBehavior.Forever });
+            return;
+        }
+
+        if (_frameStyle == FrameChasers)
+        {
+            // Kesik çizgi uzunlukları çizgi kalınlığı biriminde; çevre köşelerin yayıyla.
+            double units = perimeter / ChaserLine;
+            double dash = units * ChaserShare;
+            double gap = units / 2 - dash;
+            _chasers.StrokeDashArray = [dash, gap, dash, gap];
+            if (SystemParameters.ClientAreaAnimation)
+            {
+                _chasers.BeginAnimation(Shape.StrokeDashOffsetProperty, new DoubleAnimation(0, -units, TimeSpan.FromSeconds(ChaseSeconds)) { RepeatBehavior = RepeatBehavior.Forever });
+            }
+            return;
+        }
+
+        _chasers.BeginAnimation(Shape.StrokeDashOffsetProperty, null);
+        bool bars = _frameStyle == FrameEqualizer;
+        int count = (int)(perimeter / (bars ? BarSpacing : DotSpacing));
+        for (int i = 0; i < count; i++)
+        {
+            double along = (i + 0.5) / count;
+            (Point at, Vector inward) = PerimeterPoint(along * perimeter, width, height);
+            Shape shape = bars
+                ? new Line { Stroke = _accent, StrokeThickness = BarLine, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, X1 = at.X, Y1 = at.Y, X2 = at.X, Y2 = at.Y }
+                : new Ellipse { Fill = _accent, Width = DotSize, Height = DotSize, Opacity = 0.16, RenderTransform = new ScaleTransform(1, 1, DotSize / 2, DotSize / 2) };
+            if (!bars)
+            {
+                Canvas.SetLeft(shape, at.X - DotSize / 2);
+                Canvas.SetTop(shape, at.Y - DotSize / 2);
+            }
+            _frame.Children.Add(shape);
+            _parts.Add((shape, at, inward, along, 0));
+        }
+
+        if (bars)
+        {
+            _meter = AudioEndpoint.OpenMeter("Spotify");
+        }
+        if (SystemParameters.ClientAreaAnimation && !_animating)
+        {
+            _animating = true;
+            CompositionTarget.Rendering += Parts_Rendering;
+        }
+    }
+
+    private void StopParts()
+    {
+        if (_animating)
+        {
+            _animating = false;
+            CompositionTarget.Rendering -= Parts_Rendering;
+        }
+        foreach ((Shape shape, _, _, _, _) in _parts)
+        {
+            _frame.Children.Remove(shape);
+        }
+        _parts.Clear();
+        _meter = null;
+    }
+
+    /// <summary>
+    /// Her karede: ekolayzırda sol yarı sol kanal, sağ yarı sağ kanal; her çubuk kendi hızında salınan bir payla
+    /// (tek düzey bütün çubukları aynı boyda tutardı), hızlı yükselip yavaş iner. Lunaparkta ışık başı kenarda döner,
+    /// arkasındaki noktalar yavaşça söner.
+    /// </summary>
+    private void Parts_Rendering(object? sender, EventArgs e)
+    {
+        double seconds = _clock.Elapsed.TotalSeconds;
+        if (_frameStyle == FrameEqualizer)
+        {
+            // Ölçer sesin kendisini (uygulamanın sesi kısıksa küçük) verir: son tepelere göre ölçeklenir, tavan yavaş iner;
+            // yoksa çubuklar müzik çalarken de kısa kalıyordu (ölçüldü).
+            (float left, float right) = _meter?.Peaks() ?? (0, 0);
+            _ceiling = Math.Max(Math.Max(left, right), Math.Max(MinCeiling, _ceiling * CeilingFall));
+            left /= (float)_ceiling;
+            right /= (float)_ceiling;
+            _left += (left - _left) * (left > _left ? 0.5 : 0.12);
+            _right += (right - _right) * (right > _right ? 0.5 : 0.12);
+            double middle = _frame.ActualWidth / 2;
+            for (int i = 0; i < _parts.Count; i++)
+            {
+                (Shape shape, Point at, Vector inward, double along, double value) = _parts[i];
+                double side = at.X < middle ? _left : _right;
+                double sway = 0.5 + 0.5 * Math.Sin(seconds * (6 + i % 7 * 1.3) + i * 1.7);
+                double target = Math.Min(1, side) * (0.3 + 0.7 * sway);
+                value += (target - value) * (target > value ? 0.45 : 0.15);
+                double length = BarMin + value * (BarMax - BarMin);
+                var line = (Line)shape;
+                line.X2 = at.X + inward.X * length;
+                line.Y2 = at.Y + inward.Y * length;
+                _parts[i] = (shape, at, inward, along, value);
+            }
+            return;
+        }
+
+        double head = seconds / MarqueeSeconds % 1;
+        foreach ((Shape shape, _, _, double along, _) in _parts)
+        {
+            double behind = (head - along + 1) % 1;
+            double light = Math.Max(0, 1 - behind / MarqueeTail);
+            shape.Opacity = 0.16 + 0.84 * light;
+            var grow = (ScaleTransform)shape.RenderTransform;
+            grow.ScaleX = grow.ScaleY = 1 + 0.5 * light;
+        }
+    }
+
+    /// <summary>Yuvarlak köşeli kenarda, sol üst köşenin sonundan saat yönünde verilen uzaklıktaki nokta ve içe dönük yön.</summary>
+    private static (Point At, Vector Inward) PerimeterPoint(double distance, double width, double height)
+    {
+        double r = FrameCorner;
+        double top = width - 2 * r;
+        double side = height - 2 * r;
+        double arc = Math.PI * r / 2;
+        double left = FrameInset;
+        double upper = FrameInset;
+        double[] segments = [top, arc, side, arc, top, arc, side, arc];
+        int index = 0;
+        while (index < segments.Length - 1 && distance > segments[index])
+        {
+            distance -= segments[index];
+            index++;
+        }
+
+        (Point center, double startAngle) corner = index switch
+        {
+            1 => (new Point(left + width - r, upper + r), -90),
+            3 => (new Point(left + width - r, upper + height - r), 0),
+            5 => (new Point(left + r, upper + height - r), 90),
+            _ => (new Point(left + r, upper + r), 180)
+        };
+        switch (index)
+        {
+            case 0:
+                return (new Point(left + r + distance, upper), new Vector(0, 1));
+            case 2:
+                return (new Point(left + width, upper + r + distance), new Vector(-1, 0));
+            case 4:
+                return (new Point(left + width - r - distance, upper + height), new Vector(0, -1));
+            case 6:
+                return (new Point(left, upper + height - r - distance), new Vector(1, 0));
+            default:
+                double angle = (corner.startAngle + distance / arc * 90) * Math.PI / 180;
+                var outward = new Vector(Math.Cos(angle), Math.Sin(angle));
+                return (corner.center + outward * r, -outward);
         }
     }
 

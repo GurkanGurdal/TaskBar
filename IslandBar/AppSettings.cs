@@ -36,6 +36,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool _showClaudeChip;
     private bool _showVolumeChip = true;
     private int _lyricsScreen;
+    private int _lyricsFrame;
     private bool _keepScreenshots = true;
     private bool _keepCopiedText = true;
     private BarTheme _theme = BarTheme.Glass;
@@ -145,6 +146,13 @@ public sealed class AppSettings : INotifyPropertyChanged
     {
         get => _lyricsScreen;
         set => SetField(ref _lyricsScreen, Math.Clamp(value, 0, 2));
+    }
+
+    /// <summary>İkinci ekrandaki söz sahnesinin çerçevesi: 0 İkili tur, 1 Kenar ekolayzır, 2 Lunapark (kullanıcının seçtikleri).</summary>
+    public int LyricsFrame
+    {
+        get => _lyricsFrame;
+        set => SetField(ref _lyricsFrame, Math.Clamp(value, 0, 2));
     }
 
     public ObservableCollection<GroupItem> Pinned { get; set; } = new();

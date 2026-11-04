@@ -47,6 +47,10 @@ internal sealed class LyricsMode
     private TimeSpan _position;
     private DateTimeOffset _positionAt;
     private bool _isPlaying;
+    private string? _retryFor;
+    private int _retries;
+    private const int MaxRetries = 3;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
     /// <summary>İkinci ekranda tam ekran (kullanıcı seçti); ekran çıkarılırsa çubuktaki altyazıya döner.</summary>
     private bool _onSecondScreen;
@@ -67,6 +71,15 @@ internal sealed class LyricsMode
     }
 
     public static LyricsMode Shared { get; } = new();
+
+    /// <summary>İkinci ekrandaki çerçeve (ayardan).</summary>
+    public Func<int>? FrameStyleOf { get; set; }
+
+    /// <summary>Ayarda çerçeve değişti: açık sahne hemen geçer.</summary>
+    public void ApplyFrame()
+    {
+        _stage?.SetFrame(FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers);
+    }
 
     /// <summary>Ana ekrandaki adanın yeri; çubuklar hazır değilse null.</summary>
     public Func<LyricsPlace?>? PlaceOf { get; set; }
@@ -297,6 +310,23 @@ internal sealed class LyricsMode
 
             _lyrics = lyrics;
             _problemUntil = lyrics.Problem != null ? DateTime.UtcNow + ProblemShown : DateTime.MaxValue;
+
+            // Bağlantı aksadıysa şarkı değişmeden birkaç kez yeniden denenir (ilk istekte bir kez "ulaşılamadı" görüldü).
+            if (key != _retryFor)
+            {
+                _retryFor = key;
+                _retries = 0;
+            }
+            if (lyrics.Transient && _retries < MaxRetries)
+            {
+                _retries++;
+                await Task.Delay(RetryDelay);
+                if (IsOn && key == _trackKey)
+                {
+                    _trackKey = null;
+                    RestartSettle();
+                }
+            }
         }
         catch (Exception e) when (e is COMException or OperationCanceledException)
         {
@@ -356,7 +386,7 @@ internal sealed class LyricsMode
     {
         if (_stage == null)
         {
-            _stage = new LyricsStage(screen.Bounds, () => SetOn(false));
+            _stage = new LyricsStage(screen.Bounds, FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers, () => SetOn(false));
             _stage.Show();
         }
 

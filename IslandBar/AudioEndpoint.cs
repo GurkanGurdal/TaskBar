@@ -145,6 +145,138 @@ internal sealed class AudioEndpoint
         return ids;
     }
 
+    /// <summary>
+    /// Bir uygulamanın sesinin ölçeri (söz sahnesinin kenar ekolayzırı için): kanal başına tepe değeri, 0..1.
+    /// Uygulamanın ses oturumları bütün etkin çıkış aygıtlarında aranır (Spotify varsayılan aygıttan başka yere
+    /// çalabiliyor; yalnızca varsayılan aygıt ölçülünce çubuklar çalarken de kıpırdamadı). Oturum yoksa etkin çıkış
+    /// aygıtlarının karışımı. Oturumlar birkaç saniyede bir yeniden aranır.
+    /// </summary>
+    public static Meter OpenMeter(string processName)
+    {
+        return new Meter(processName);
+    }
+
+    internal sealed class Meter(string processName)
+    {
+        private const int RefreshMs = 3000;
+        private List<IAudioMeterInformation> _meters = [];
+        // İlk çağrıda hemen aransın (long.MinValue farkı taşırıyordu, hiç aranmıyordu).
+        private long _foundAt = -RefreshMs - 1;
+
+        /// <summary>Bulunan ölçer sayısı ve uygulamanın kendi oturumları mı (tanı için).</summary>
+        public (int Count, bool OwnSessions) Source { get; private set; }
+
+        /// <summary>Sol ve sağ, ölçerlerin en yükseği (tek kanalda ikisi aynı); bir şey yoksa 0.</summary>
+        public (float Left, float Right) Peaks()
+        {
+            if (Environment.TickCount64 - _foundAt > RefreshMs)
+            {
+                _foundAt = Environment.TickCount64;
+                Find();
+            }
+
+            float left = 0;
+            float right = 0;
+            foreach (IAudioMeterInformation meter in _meters)
+            {
+                try
+                {
+                    if (meter.GetMeteringChannelCount(out uint count) != 0 || count == 0)
+                    {
+                        continue;
+                    }
+
+                    float[] values = new float[count];
+                    if (meter.GetChannelsPeakValues(count, values) == 0)
+                    {
+                        left = Math.Max(left, values[0]);
+                        right = Math.Max(right, values[count > 1 ? 1 : 0]);
+                    }
+                }
+                catch (COMException)
+                {
+                    // Aygıt ya da oturum gitti; sonraki aramada listeden düşer.
+                }
+            }
+            return (left, right);
+        }
+
+        private void Find()
+        {
+            var sessions = new List<IAudioMeterInformation>();
+            var devices = new List<IAudioMeterInformation>();
+            const int activeDevices = 1;
+            try
+            {
+                var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+                if (enumerator.EnumAudioEndpoints(Render, activeDevices, out IMMDeviceCollection collection) != 0 || collection.GetCount(out uint count) != 0)
+                {
+                    return;
+                }
+
+                Guid managerId = typeof(IAudioSessionManager2).GUID;
+                Guid meterId = typeof(IAudioMeterInformation).GUID;
+                for (uint i = 0; i < count; i++)
+                {
+                    if (collection.Item(i, out IMMDevice device) != 0)
+                    {
+                        continue;
+                    }
+
+                    if (device.Activate(ref meterId, ClsctxAll, IntPtr.Zero, out object deviceMeter) == 0)
+                    {
+                        devices.Add((IAudioMeterInformation)deviceMeter);
+                    }
+
+                    if (device.Activate(ref managerId, ClsctxAll, IntPtr.Zero, out object manager) != 0
+                        || ((IAudioSessionManager2)manager).GetSessionEnumerator(out IAudioSessionEnumerator list) != 0
+                        || list.GetCount(out int sessionCount) != 0)
+                    {
+                        continue;
+                    }
+
+                    for (int s = 0; s < sessionCount; s++)
+                    {
+                        if (list.GetSession(s, out object session) == 0 && session is IAudioSessionControl2 control
+                            && control.GetProcessId(out uint processId) == 0 && IsProcess(processId) && session is IAudioMeterInformation meter)
+                        {
+                            sessions.Add(meter);
+                        }
+                    }
+                }
+            }
+            catch (Exception e) when (e is COMException or InvalidCastException)
+            {
+                // Aygıt tam bu sırada değişti; sonraki aramada.
+            }
+
+            _meters = sessions.Count > 0 ? sessions : devices;
+            Source = (_meters.Count, sessions.Count > 0);
+        }
+
+        private bool IsProcess(uint processId)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                return string.Equals(process.ProcessName, processName, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
+
+    [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioMeterInformation
+    {
+        [PreserveSig] int GetPeakValue(out float peak);
+        [PreserveSig] int GetMeteringChannelCount(out uint count);
+        [PreserveSig] int GetChannelsPeakValues(uint count, [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] float[] values);
+        [PreserveSig] int QueryHardwareSupport(out uint mask);
+    }
+
     private static IAudioEndpointVolume? OpenVolume(IMMDeviceEnumerator enumerator)
     {
         if (enumerator.GetDefaultAudioEndpoint(Render, Multimedia, out IMMDevice device) != 0)

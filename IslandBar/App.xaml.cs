@@ -147,6 +147,7 @@ public partial class App : Application
             ? new LyricsPlace(island, bar.AppBarEdge, bar.IsIslandHidden, bar.IsFullScreenHere)
             : null;
         LyricsMode.Shared.Showing += () => _bars.FirstOrDefault(bar => bar.Screen.Primary)?.YieldChipSpot();
+        LyricsMode.Shared.FrameStyleOf = () => _settings.LyricsFrame;
         FocusTimer.Shared.Finished += FocusTimer_Finished;
         ReminderStore.Shared.Due += Reminder_Due;
         ReminderStore.Shared.Start();
@@ -188,6 +189,10 @@ public partial class App : Application
         else if (e.PropertyName == nameof(AppSettings.ShowVolumeChip))
         {
             ApplyVolumeChipMode();
+        }
+        else if (e.PropertyName == nameof(AppSettings.LyricsFrame))
+        {
+            LyricsMode.Shared.ApplyFrame();
         }
         else if (e.PropertyName == nameof(AppSettings.ShowClaudeChip))
         {
