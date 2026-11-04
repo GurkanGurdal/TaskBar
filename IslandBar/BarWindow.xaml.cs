@@ -621,6 +621,9 @@ public partial class BarWindow : AppBarWindow
             : Math.Abs(slide.X) >= DesiredWidth;
     }
 
+    /// <summary>Ada otomatik gizlemeyle ekran dışında.</summary>
+    internal bool IsIslandHidden => IsIslandOffScreen();
+
     internal bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
     {
         area = System.Drawing.Rectangle.Empty;
@@ -899,6 +902,11 @@ public partial class BarWindow : AppBarWindow
         if (VolumePopup.IsOpen && !VolumeCard.IsHiding && IsBarOutOfSight() != _volumeAtBarPlace)
         {
             MoveVolumeChip();
+        }
+
+        if (Screen.Primary)
+        {
+            ConvertCard.Current?.FollowBar(IsIslandOffScreen());
         }
 
         // Başlat kontrolü süreç adı okuyor, pencereleri dolaşmak da sistem çağrısı; imleç kadar sık gerekmiyor.
@@ -2963,7 +2971,7 @@ public partial class BarWindow : AppBarWindow
     private void NowPlaying_TrackStarted(NowPlayingTrack track)
     {
         // Açık kart varsa kalkmasın; Hızlı ayarlar şarkıyı zaten gösteriyor.
-        if (!_settings.ShowNowPlayingChip || IsReminderShown || _fullScreenOnThisBar || IsAnyPanelActive() || VolumePopup.IsOpen || NowPlayingChip.IsUserBusy())
+        if (!_settings.ShowNowPlayingChip || IsReminderShown || _fullScreenOnThisBar || IsAnyPanelActive() || IsChipSpotTaken || VolumePopup.IsOpen || NowPlayingChip.IsUserBusy())
         {
             return;
         }
@@ -3021,7 +3029,7 @@ public partial class BarWindow : AppBarWindow
             : IsClaudeInSight() ? "Claude ekranında en üstte"
             : IsReminderShown ? "hatırlatıcı açık"
             : _fullScreenOnThisBar ? "tam ekran"
-            : IsAnyPanelActive() || VolumePopup.IsOpen ? "kart açık"
+            : IsAnyPanelActive() || IsChipSpotTaken || VolumePopup.IsOpen ? "kart açık"
             : NowPlayingChip.IsUserBusy() ? "rahatsız etme"
             : null;
         AutoHideLog.Write($"{Screen.DeviceName} Claude olayı '{note.Project}: {note.Status}' {(skip == null ? "gösteriliyor" : "gösterilmedi: " + skip)}, " +
@@ -3099,7 +3107,7 @@ public partial class BarWindow : AppBarWindow
 
     private void ShowResidentChip()
     {
-        if (!TranslateMode.Shared.IsOn || !IsLoaded || ChipPopup.IsOpen || _fullScreenOnThisBar || IsAnyPanelActive()
+        if (!TranslateMode.Shared.IsOn || !IsLoaded || ChipPopup.IsOpen || _fullScreenOnThisBar || IsAnyPanelActive() || IsChipSpotTaken
             || VolumePopup.IsOpen || PreviewPopup.IsOpen)
         {
             return;
@@ -3417,6 +3425,18 @@ public partial class BarWindow : AppBarWindow
     private bool IsAnyPanelActive()
     {
         return GroupPanel.IsOpen || TrayPopup.IsOpen || QuickPopup.IsOpen || StartPopup.IsOpen || CalendarPopup.IsOpen || PreviewPopup.IsOpen || _geniesPlaying > 0;
+    }
+
+    /// <summary>Dönüştür kartı şarkı kartının yerinde duruyor (ana ekran): şarkı, Claude ve çeviri kartı çıkmaz.</summary>
+    private bool IsChipSpotTaken => Screen.Primary && ConvertCard.Current != null;
+
+    /// <summary>Dönüştür kartı açılıyor: şarkı ya da çeviri kartı yerini verir; hatırlatıcı kalır.</summary>
+    internal void YieldChipSpot()
+    {
+        if (ChipPopup.IsOpen && !IsReminderShown)
+        {
+            Chip.Dismiss(immediately: true);
+        }
     }
 
     /// <summary>

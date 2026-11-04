@@ -343,7 +343,8 @@ public partial class App : Application
                 return;
             }
 
-            card = new ConvertCard(island, bar.AppBarEdge);
+            bar.YieldChipSpot();
+            card = new ConvertCard(island, bar.AppBarEdge, bar.IsIslandHidden);
             card.Show();
         }
         card.AddFiles(files);

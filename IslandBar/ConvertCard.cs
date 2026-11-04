@@ -36,6 +36,12 @@ internal sealed class ConvertCard : Window
     private const int StaggerMs = 40;
     private const int SpinMs = 1000;
     private const double SpinShare = 0.28;
+    private const int MoveMs = 280;
+    private const int OpenMs = 420;
+    private const int OpenFadeMs = 150;
+    private const int CloseMs = 190;
+    private const double BudScale = 0.45;
+    private const double BudDistance = 14;
     private const uint NoSize = 0x0001;
     private const uint NoZOrder = 0x0004;
     private const uint NoActivate = 0x0010;
@@ -71,14 +77,24 @@ internal sealed class ConvertCard : Window
     private bool _draggingOut;
     private bool _closing;
 
+    /// <summary>Çubuk gizli: kart adanın durduğu yerde; açıkken onun üstünde (şarkı kartı gibi).</summary>
+    private bool _atBarPlace;
+    private readonly ScaleTransform _budScale = new();
+    private readonly TranslateTransform _budSlide = new();
+    private readonly System.Diagnostics.Stopwatch _moveClock = new();
+    private System.Drawing.Point _moveFrom;
+    private bool _moving;
+
     /// <summary>Cam adadaki gibi arkası değişince tazelenir; adaya bakan kenar okunmaz.</summary>
     private readonly GlassWindowWatch _glassWatch;
 
     /// <param name="island">Ana ekrandaki adanın duracağı yer, ekran pikseli.</param>
-    public ConvertCard(System.Drawing.Rectangle island, AppBarEdge edge)
+    /// <param name="barHidden">Ada şu an ekran dışında (otomatik gizleme).</param>
+    public ConvertCard(System.Drawing.Rectangle island, AppBarEdge edge, bool barHidden)
     {
         _island = island;
         _edge = edge;
+        _atBarPlace = barHidden;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
@@ -229,6 +245,16 @@ internal sealed class ConvertCard : Window
         };
         _square.VerticalAlignment = align;
         _side.VerticalAlignment = align;
+
+        // Açılırken çubuktan küçük bir damla olarak çıkar: çubuğa bakan kenarın ortasından büyür.
+        _square.RenderTransformOrigin = edge switch
+        {
+            AppBarEdge.Top => new Point(0.5, 0),
+            AppBarEdge.Left => new Point(0, 0.5),
+            AppBarEdge.Right => new Point(1, 0.5),
+            _ => new Point(0.5, 1)
+        };
+        _square.RenderTransform = new TransformGroup { Children = { _budScale, _budSlide } };
         bool sideFirst = edge == AppBarEdge.Right;
         _side.Margin = sideFirst ? new Thickness(0, 0, SideGap, 0) : new Thickness(SideGap, 0, 0, 0);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -254,6 +280,7 @@ internal sealed class ConvertCard : Window
 
     public static ConvertCard? Current { get; private set; }
 
+    /// <summary>Açılışın tersi: yan kart kareye çekilir, kare çubuğa doğru küçülüp kaybolur.</summary>
     public void Dismiss()
     {
         if (_closing)
@@ -262,7 +289,113 @@ internal sealed class ConvertCard : Window
         }
 
         _closing = true;
-        Close();
+        if (Current == this)
+        {
+            // Kapanırken tekerlek yeniden açabilsin, gelen dosyalar giden karta eklenmesin.
+            Current = null;
+        }
+
+        if (!SystemParameters.ClientAreaAnimation || _square.Opacity == 0 || !IsVisible)
+        {
+            Close();
+            return;
+        }
+
+        IsHitTestVisible = false;
+        var duration = TimeSpan.FromMilliseconds(CloseMs);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        if (_side.Visibility == Visibility.Visible)
+        {
+            Animate(_sideSlide, TranslateTransform.XProperty, _sideSlide.X, _edge == AppBarEdge.Right ? 10 : -10, TimeSpan.FromMilliseconds(140), TimeSpan.Zero, ease);
+            Animate(_side, OpacityProperty, _side.Opacity, 0, TimeSpan.FromMilliseconds(140), TimeSpan.Zero, null);
+        }
+
+        Vector toward = TowardBar() * BudDistance;
+        Animate(_budScale, ScaleTransform.ScaleXProperty, 1, BudScale, duration, TimeSpan.Zero, ease);
+        Animate(_budScale, ScaleTransform.ScaleYProperty, 1, BudScale, duration, TimeSpan.Zero, ease);
+        Animate(_budSlide, TranslateTransform.XProperty, 0, toward.X, duration, TimeSpan.Zero, ease);
+        Animate(_budSlide, TranslateTransform.YProperty, 0, toward.Y, duration, TimeSpan.Zero, ease);
+        var fade = new DoubleAnimation(_square.Opacity, 0, duration) { EasingFunction = ease, FillBehavior = FillBehavior.HoldEnd };
+        fade.Completed += (_, _) => Close();
+        _square.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// Çubuk gizlenip açılınca kart şarkı kartı gibi yer değiştirir: gizliyken adanın yerinde, açıkken üstünde.
+    /// Pencere kayarak gider (içeriği kaydırmak pencerenin kenarında kesilirdi); bitince camın arkası yeniden alınır.
+    /// </summary>
+    public void FollowBar(bool barHidden)
+    {
+        if (_closing || barHidden == _atBarPlace || PresentationSource.FromVisual(this) is not HwndSource source)
+        {
+            return;
+        }
+
+        _atBarPlace = barHidden;
+        if (!SystemParameters.ClientAreaAnimation || !GetWindowRect(source.Handle, out NativeRect rect))
+        {
+            Place();
+            _ = RefreshVisibleGlassAsync();
+            return;
+        }
+
+        _moveFrom = new System.Drawing.Point(rect.Left, rect.Top);
+        _moveClock.Restart();
+        if (!_moving)
+        {
+            _moving = true;
+            CompositionTarget.Rendering += Move_Rendering;
+        }
+    }
+
+    private void Move_Rendering(object? sender, EventArgs e)
+    {
+        if (_closing || PresentationSource.FromVisual(this) is not HwndSource source)
+        {
+            StopMoving();
+            return;
+        }
+
+        double t = Math.Clamp(_moveClock.Elapsed.TotalMilliseconds / MoveMs, 0, 1);
+        double eased = 1 - Math.Pow(1 - t, 3);
+        System.Drawing.Point to = Spot(source);
+        int x = (int)Math.Round(_moveFrom.X + (to.X - _moveFrom.X) * eased);
+        int y = (int)Math.Round(_moveFrom.Y + (to.Y - _moveFrom.Y) * eased);
+        SetWindowPos(source.Handle, IntPtr.Zero, x, y, 0, 0, NoSize | NoZOrder | NoActivate);
+        if (t >= 1)
+        {
+            StopMoving();
+            _ = RefreshVisibleGlassAsync();
+        }
+    }
+
+    private void StopMoving()
+    {
+        if (_moving)
+        {
+            _moving = false;
+            CompositionTarget.Rendering -= Move_Rendering;
+        }
+    }
+
+    private async Task RefreshVisibleGlassAsync()
+    {
+        await _glassWatch.RefreshAsync(_square, isHidden: false);
+        if (!_closing && _side.Visibility == Visibility.Visible && _side.Opacity > 0)
+        {
+            await _glassWatch.RefreshAsync(_side, isHidden: false);
+        }
+    }
+
+    private Vector TowardBar()
+    {
+        return _edge switch
+        {
+            AppBarEdge.Top => new Vector(0, -1),
+            AppBarEdge.Left => new Vector(-1, 0),
+            AppBarEdge.Right => new Vector(1, 0),
+            _ => new Vector(0, 1)
+        };
     }
 
     /// <summary>Tekerlekteki dilime bırakılan ya da karta sürüklenen dosyalar.</summary>
@@ -307,12 +440,32 @@ internal sealed class ConvertCard : Window
         await _square.RefreshGlassAsync(animateTint: false, isHidden: true);
         if (!_closing)
         {
-            _square.Opacity = 1;
+            Reveal();
         }
+    }
+
+    /// <summary>Çubuğun içinden küçük bir damla olarak çıkar, biraz geçip yerine oturur (şarkı kartının çıkışı gibi).</summary>
+    private void Reveal()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            _square.Opacity = 1;
+            return;
+        }
+
+        Vector toward = TowardBar() * BudDistance;
+        var duration = TimeSpan.FromMilliseconds(OpenMs);
+        var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
+        Animate(_budScale, ScaleTransform.ScaleXProperty, BudScale, 1, duration, TimeSpan.Zero, ease);
+        Animate(_budScale, ScaleTransform.ScaleYProperty, BudScale, 1, duration, TimeSpan.Zero, ease);
+        Animate(_budSlide, TranslateTransform.XProperty, toward.X, 0, duration, TimeSpan.Zero, new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(_budSlide, TranslateTransform.YProperty, toward.Y, 0, duration, TimeSpan.Zero, new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(_square, OpacityProperty, 0, 1, TimeSpan.FromMilliseconds(OpenFadeMs), TimeSpan.Zero, null);
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        StopMoving();
         base.OnClosed(e);
         if (Current == this)
         {
@@ -816,14 +969,24 @@ internal sealed class ConvertCard : Window
     }
     #endregion
 
-    /// <summary>Kare adanın ortasının üstünde (çubuk üstteyse altında, yandaysa yanında), çalışma alanında.</summary>
     private void Place()
     {
-        if (PresentationSource.FromVisual(this) is not HwndSource source)
+        // Kayarken yeri her karede Spot'tan alınıyor.
+        if (_moving || PresentationSource.FromVisual(this) is not HwndSource source)
         {
             return;
         }
 
+        System.Drawing.Point spot = Spot(source);
+        SetWindowPos(source.Handle, IntPtr.Zero, spot.X, spot.Y, 0, 0, NoSize | NoZOrder | NoActivate);
+    }
+
+    /// <summary>
+    /// Pencerenin sol üstü. Kare adanın ortasının üstünde (çubuk üstteyse altında, yandaysa yanında); çubuk gizliyken
+    /// adanın durduğu yerde, kenarı adanınkiyle hizalı. Yatayda çalışma alanında kalır.
+    /// </summary>
+    private System.Drawing.Point Spot(HwndSource source)
+    {
         double scale = source.CompositionTarget.TransformToDevice.M11;
         int width = (int)Math.Round(ActualWidth * scale);
         int height = (int)Math.Round(ActualHeight * scale);
@@ -832,19 +995,35 @@ internal sealed class ConvertCard : Window
         int square = (int)Math.Round(Square * scale);
         int centerX = _island.Left + _island.Width / 2;
         int centerY = _island.Top + _island.Height / 2;
-        (int x, int y) = _edge switch
+        (int x, int y) = (_edge, _atBarPlace) switch
         {
-            AppBarEdge.Top => (centerX - square / 2 - shadow, _island.Bottom + gap - shadow),
-            AppBarEdge.Left => (_island.Right + gap - shadow, centerY - height / 2),
-            AppBarEdge.Right => (_island.Left - gap - width + shadow, centerY - height / 2),
+            (AppBarEdge.Top, true) => (centerX - square / 2 - shadow, _island.Top - shadow),
+            (AppBarEdge.Top, false) => (centerX - square / 2 - shadow, _island.Bottom + gap - shadow),
+            (AppBarEdge.Left, true) => (_island.Left - shadow, centerY - height / 2),
+            (AppBarEdge.Left, false) => (_island.Right + gap - shadow, centerY - height / 2),
+            (AppBarEdge.Right, true) => (_island.Right - width + shadow, centerY - height / 2),
+            (AppBarEdge.Right, false) => (_island.Left - gap - width + shadow, centerY - height / 2),
+            (_, true) => (centerX - square / 2 - shadow, _island.Bottom - height + shadow),
             _ => (centerX - square / 2 - shadow, _island.Top - gap - height + shadow)
         };
 
         System.Drawing.Rectangle area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(centerX, centerY)).WorkingArea;
         x = Math.Clamp(x, area.Left - shadow, Math.Max(area.Left - shadow, area.Right - width + shadow));
-        SetWindowPos(source.Handle, IntPtr.Zero, x, y, 0, 0, NoSize | NoZOrder | NoActivate);
+        return new System.Drawing.Point(x, y);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 
     [DllImport("user32")]
     private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
+    [DllImport("user32")]
+    private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
 }
