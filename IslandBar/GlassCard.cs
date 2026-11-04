@@ -363,6 +363,12 @@ public class GlassCard : ContentControl
         }
     }
 
+    /// <summary>
+    /// Kart bir süre kaymış duracaksa (Dönüştür'ün kapalı çekmecesi) kayma, DIP: cam o yerin arkasını alır. Kısa
+    /// animasyonlarda verilmez, cam durduğu yerin görüntüsüyle oynar.
+    /// </summary>
+    public Vector CaptureShift { get; set; }
+
     private bool TryGetRestRect(out System.Drawing.Rectangle area)
     {
         area = System.Drawing.Rectangle.Empty;
@@ -371,8 +377,8 @@ public class GlassCard : ContentControl
             return false;
         }
 
-        // Dönüşümden bağımsız konumu üst öğeden hesapla.
-        Vector offset = VisualTreeHelper.GetOffset(this);
+        // Dönüşümden bağımsız konumu üst öğeden hesapla; kalıcı kaymayı (çekmece) sahibi söyler.
+        Vector offset = VisualTreeHelper.GetOffset(this) + CaptureShift;
         Point origin = parent.PointToScreen(new Point(offset.X, offset.Y));
         double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
         area = new System.Drawing.Rectangle(

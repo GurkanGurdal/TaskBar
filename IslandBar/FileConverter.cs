@@ -1,17 +1,13 @@
-﻿using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 
 namespace IslandBar;
 
 /// <summary>Kartta bir dönüştürme: bir ya da birkaç dosya, tek hedef. Durumu yalnızca arayüz iş parçacığında değişir.</summary>
-internal sealed class ConversionJob(IReadOnlyList<string> files, ConversionTarget target, bool keepOriginals)
+internal sealed class ConversionJob(IReadOnlyList<string> files, ConversionTarget target)
 {
     public IReadOnlyList<string> Files { get; } = files;
     public ConversionTarget Target { get; } = target;
-
-    /// <summary>Kullanıcıya soruldu; hayır denirse dönüşen dosyaların orijinali Geri Dönüşüm Kutusu'na gider.</summary>
-    public bool KeepOriginals { get; } = keepOriginals;
 
     /// <summary>0..1; null: ilerleme bilinmiyor (Office, tek dosya).</summary>
     public double? Progress { get; set; }
@@ -20,11 +16,17 @@ internal sealed class ConversionJob(IReadOnlyList<string> files, ConversionTarge
     public int FailedCount { get; set; }
     public string? Problem { get; set; }
 }
-
-/// <summary>Dönüştürme kartının işi: dosyalar sırayla, sonra istenirse orijinaller silinir.</summary>
+/// <summary>
+/// Dönüştürme kartının işi (kullanıcının kararı): kullanıcının dosyalarına dokunulmaz, yeni dosyalar IslandBar'ın kendi
+/// klasörüne (<see cref="Root"/>) yazılır ve kutuda durur; kullanıcı onları kutudan sürükleyip istediği yere taşır.
+/// Kutudaki bir dosya yeniden dönüştürülürse eskisi (bizim dosyamız) Geri Dönüşüm Kutusu'na gider.
+/// </summary>
 internal static class FileConverter
 {
     private const int ProgressIntervalMs = 100;
+
+    /// <summary>Dönüşen dosyaların bekleme yeri; her iş kendi alt klasöründe.</summary>
+    public static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IslandBar", "Dönüştürülenler");
     private const uint Delete = 3;
     private const ushort Silent = 0x4;
     private const ushort NoConfirmation = 0x10;
@@ -36,6 +38,14 @@ internal static class FileConverter
     {
         job.Progress = job.Files.Count == 1 && job.Target.Kind is not (ConversionKind.Media or ConversionKind.PdfPages) ? null : 0;
         changed();
+        string folder = Path.Combine(Root, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        Directory.CreateDirectory(folder);
+        if (job.Target.Kind == ConversionKind.ImagesPdf)
+        {
+            await CombineAsync(job, folder, changed);
+            return;
+        }
+
         long lastReport = 0;
         for (int i = 0; i < job.Files.Count; i++)
         {
@@ -60,7 +70,7 @@ internal static class FileConverter
 
             try
             {
-                job.Converted.Add((file, await FileConversions.ConvertAsync(file, job.Target, progress, CancellationToken.None)));
+                job.Converted.Add((file, await FileConversions.ConvertAsync(file, job.Target, folder, progress, CancellationToken.None)));
             }
             catch (Exception e)
             {
@@ -76,45 +86,86 @@ internal static class FileConverter
             }
         }
 
-        if (!job.KeepOriginals && job.Converted.Count > 0)
-        {
-            Recycle(job.Converted.Select(pair => pair.Source));
-        }
+        // Kutudaki eski hali bizim dosyamızdı (yeniden dönüştürüldü); kullanıcının dosyası yerinde kalır.
+        Recycle(job.Converted.Select(pair => pair.Source).Where(IsOurs));
+        RemoveEmptyFolders();
     }
 
-    /// <summary>Gezgin'de seçili gösterir (o klasörün açık penceresi varsa o kullanılır).</summary>
-    public static void Reveal(string path)
+    /// <summary>Bütün resimler tek PDF'te: her kaynak aynı dosyaya dönüşmüş sayılır.</summary>
+    private static async Task CombineAsync(ConversionJob job, string folder, Action changed)
     {
-        IntPtr item = ILCreateFromPathW(path);
-        if (item == IntPtr.Zero)
+        job.Progress = 0;
+        var progress = new Progress<double>(fraction =>
         {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true })?.Dispose();
-            return;
-        }
+            job.Progress = fraction;
+            changed();
+        });
 
         try
         {
-            SHOpenFolderAndSelectItems(item, 0, IntPtr.Zero, 0);
+            string output = await FileConversions.CombineImagesAsync(job.Files, folder, progress);
+            job.Converted.AddRange(job.Files.Select(file => (file, output)));
         }
-        finally
+        catch (Exception e)
         {
-            ILFree(item);
+            job.FailedCount = job.Files.Count;
+            job.Problem = Reason(e, job.Target);
+            ManagedShell.Common.Logging.ShellLogger.Warning($"FileConverter: {job.Files.Count} resim → tek PDF: {e}");
+        }
+
+        Recycle(job.Converted.Select(pair => pair.Source).Where(IsOurs));
+        RemoveEmptyFolders();
+    }
+
+    /// <summary>Dosya IslandBar'ın bekleme klasöründe mi (kutudan alınmamış bir dönüşüm sonucu).</summary>
+    public static bool IsOurs(string path)
+    {
+        return Path.GetFullPath(path).StartsWith(Root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Boşalan iş klasörleri kaldırılır (dosyalar kutudan taşındı ya da silindi).</summary>
+    public static void RemoveEmptyFolders()
+    {
+        try
+        {
+            if (!Directory.Exists(Root))
+            {
+                return;
+            }
+
+            foreach (string folder in Directory.EnumerateDirectories(Root))
+            {
+                if (!Directory.EnumerateFileSystemEntries(folder).Any())
+                {
+                    Directory.Delete(folder);
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Kullanımda olan klasör sonra kaldırılır.
         }
     }
 
-    /// <summary>Kalıcı silme değil, Geri Dönüşüm Kutusu (kullanıcının seçimi): yanlışlıkla "Hayır" denirse geri alınır.</summary>
-    private static void Recycle(IEnumerable<string> files)
+    /// <summary>Kalıcı silme değil, Geri Dönüşüm Kutusu: kutuda bırakılan dosyalar (kullanıcının seçimi) geri alınabilir.</summary>
+    public static void Recycle(IEnumerable<string> files)
     {
+        List<string> list = files.ToList();
+        if (list.Count == 0)
+        {
+            return;
+        }
+
         var operation = new FileOperation
         {
             Function = Delete,
-            From = string.Join('\0', files) + '\0',
+            From = string.Join('\0', list) + '\0',
             Flags = (ushort)(Silent | NoConfirmation | AllowUndo | NoErrorUi)
         };
         int result = SHFileOperation(ref operation);
         if (result != 0)
         {
-            ManagedShell.Common.Logging.ShellLogger.Warning($"FileConverter: orijinaller silinemedi ({result})");
+            ManagedShell.Common.Logging.ShellLogger.Warning($"FileConverter: dosyalar silinemedi ({result})");
         }
     }
 
@@ -154,13 +205,4 @@ internal static class FileConverter
 
     [DllImport("shell32", CharSet = CharSet.Unicode)]
     private static extern int SHFileOperation(ref FileOperation operation);
-
-    [DllImport("shell32", CharSet = CharSet.Unicode)]
-    private static extern IntPtr ILCreateFromPathW(string path);
-
-    [DllImport("shell32")]
-    private static extern void ILFree(IntPtr item);
-
-    [DllImport("shell32")]
-    private static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr items, uint flags);
 }

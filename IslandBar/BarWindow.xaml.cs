@@ -624,6 +624,9 @@ public partial class BarWindow : AppBarWindow
     /// <summary>Ada otomatik gizlemeyle ekran dışında.</summary>
     internal bool IsIslandHidden => IsIslandOffScreen();
 
+    /// <summary>Ada masaüstünde saat damlalarına daralmış (ya da daralıyor).</summary>
+    internal bool IsClockChipShown => ClockChipProgress > 0;
+
     internal bool TryGetIslandRestRect(out System.Drawing.Rectangle area)
     {
         area = System.Drawing.Rectangle.Empty;
@@ -1121,6 +1124,10 @@ public partial class BarWindow : AppBarWindow
     {
         double progress = ClockChipProgress;
         bool horizontal = Orientation == Orientation.Horizontal;
+        if (Screen.Primary)
+        {
+            ConvertCard.Current?.SetBarIsChip(progress > 0);
+        }
 
         if (progress <= 0 || !IsLoaded)
         {

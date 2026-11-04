@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -16,7 +16,13 @@ internal enum ConversionKind
     Excel,
     PowerPoint,
     PdfPages,
-    Media
+    Media,
+
+    /// <summary>Her resim kendi PDF'ine, tek sayfa.</summary>
+    ImagePdf,
+
+    /// <summary>Bütün resimler tek PDF'te, sırayla birer sayfa.</summary>
+    ImagesPdf
 }
 
 /// <param name="Label">Menüde.</param>
@@ -26,8 +32,9 @@ internal sealed record ConversionTarget(string Label, string Short, string Exten
 /// <summary>
 /// Dosya dönüştürmeler, kurulu bir şey gerektirmeden (kullanıcının seçtiği dört tür): resimler Windows'un kodlayıcılarıyla
 /// (WIC; HEIC, WebP, RAW yalnızca okunur), belgeler kullanıcının Office'iyle (görünmez açılır, kendi açtığımız kapanır),
-/// PDF sayfaları Windows'un PDF okuyucusuyla, ses ve video Windows'un dönüştürücüsüyle (Media Foundation). Sonuç özgün
-/// dosyanın yanına, aynı adla yazılır (varsa "ad (2)"); özgün dosyaya dokunulmaz.
+/// PDF sayfaları Windows'un PDF okuyucusuyla, ses ve video Windows'un dönüştürücüsüyle (Media Foundation), resimden PDF
+/// kendi yazdığımız küçük PDF'le (<see cref="ImagePdf"/>). Sonuç verilen klasöre, aynı adla yazılır (varsa "ad (2)");
+/// özgün dosyaya dokunulmaz.
 /// </summary>
 internal static class FileConversions
 {
@@ -51,6 +58,8 @@ internal static class FileConversions
     private static readonly ConversionTarget Bmp = new("BMP resmi", "BMP", ".bmp", ConversionKind.Image);
     private static readonly ConversionTarget Tiff = new("TIFF resmi", "TIFF", ".tif", ConversionKind.Image);
     private static readonly ConversionTarget Gif = new("GIF resmi", "GIF", ".gif", ConversionKind.Image);
+    private static readonly ConversionTarget ImageToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.ImagePdf);
+    private static readonly ConversionTarget ImagesToOnePdf = new("Tek PDF (hepsi bir arada)", "PDF", ".pdf", ConversionKind.ImagesPdf);
     private static readonly ConversionTarget WordFromPdf = new("Word belgesi (.docx)", "Word", ".docx", ConversionKind.Word);
     private static readonly ConversionTarget PdfPages = new("PNG resimleri (her sayfa)", "PNG", ".png", ConversionKind.PdfPages);
     private static readonly ConversionTarget WordToPdf = new("PDF belgesi", "PDF", ".pdf", ConversionKind.Word);
@@ -64,7 +73,7 @@ internal static class FileConversions
     private static readonly ConversionTarget Mp4 = new("MP4 video", "MP4", ".mp4", ConversionKind.Media);
     private static readonly ConversionTarget Wmv = new("WMV video", "WMV", ".wmv", ConversionKind.Media);
 
-    private static readonly ConversionTarget[] ImageTargets = [Png, Jpeg, Bmp, Tiff, Gif];
+    private static readonly ConversionTarget[] ImageTargets = [Png, Jpeg, Bmp, Tiff, Gif, ImageToPdf];
     private static readonly ConversionTarget[] AudioTargets = [Mp3, M4a, Wav, Wma];
     private static readonly ConversionTarget[] VideoTargets = [Mp4, Wmv, Mp3, M4a];
 
@@ -104,10 +113,18 @@ internal static class FileConversions
             return [];
         }
 
-        return TargetsByExtension[Path.GetExtension(files[0])]
+        List<ConversionTarget> targets = TargetsByExtension[Path.GetExtension(files[0])]
             .Where(target => files.All(file => TargetsByExtension[Path.GetExtension(file)].Contains(target)))
             .Where(target => files.Any(file => !IsAlready(file, target)))
             .ToList();
+
+        // Birden çok resim: ayrı ayrı PDF'in yanında hepsi bir arada da.
+        int single = targets.IndexOf(ImageToPdf);
+        if (files.Count > 1 && single >= 0)
+        {
+            targets.Insert(single + 1, ImagesToOnePdf);
+        }
+        return targets;
     }
 
     /// <summary>Dosya zaten hedef biçimde (jpg ile jpeg aynı); PDF sayfaları hiçbir zaman.</summary>
@@ -125,23 +142,36 @@ internal static class FileConversions
 
     /// <summary>Tek dosya; yazılan dosyaların (PDF sayfalarında klasörün) yolu.</summary>
     /// <param name="progress">0..1; ilerleme bilinmeyen dönüşümler çağırmaz.</param>
-    public static Task<string> ConvertAsync(string file, ConversionTarget target, IProgress<double> progress, CancellationToken token)
+    public static Task<string> ConvertAsync(string file, ConversionTarget target, string folder, IProgress<double> progress, CancellationToken token)
     {
         return target.Kind switch
         {
-            ConversionKind.Image => OnSta(() => ConvertImage(file, target)),
-            ConversionKind.Word => OnSta(() => ConvertWithWord(file, target)),
-            ConversionKind.Excel => OnSta(() => ConvertWithExcel(file)),
-            ConversionKind.PowerPoint => OnSta(() => ConvertWithPowerPoint(file)),
-            ConversionKind.PdfPages => RenderPdfPagesAsync(file, progress, token),
-            _ => TranscodeAsync(file, target, progress, token)
+            ConversionKind.Image => OnSta(() => ConvertImage(file, folder, target)),
+            ConversionKind.Word => OnSta(() => ConvertWithWord(file, folder, target)),
+            ConversionKind.Excel => OnSta(() => ConvertWithExcel(file, folder)),
+            ConversionKind.PowerPoint => OnSta(() => ConvertWithPowerPoint(file, folder)),
+            ConversionKind.PdfPages => RenderPdfPagesAsync(file, folder, progress, token),
+            ConversionKind.ImagePdf or ConversionKind.ImagesPdf => CombineImagesAsync([file], folder, progress),
+            _ => TranscodeAsync(file, folder, target, progress, token)
         };
     }
 
-    /// <summary>Özgün dosyanın yanında, aynı adla; varsa "ad (2)". Uzantı boşsa klasör adı.</summary>
-    public static string FreePath(string file, string extension)
+    /// <summary>Resimler tek PDF'te, verilen sırayla birer sayfa; tek resimde dosyanın adıyla, çokta "Resimler.pdf".</summary>
+    /// <param name="progress">0..1, her resimden sonra.</param>
+    public static Task<string> CombineImagesAsync(IReadOnlyList<string> files, string folder, IProgress<double> progress)
     {
-        string directory = Path.GetDirectoryName(file)!;
+        string output = FreePath(files.Count == 1 ? files[0] : "Resimler", ".pdf", folder);
+        return OnSta(() =>
+        {
+            ImagePdf.Write(output, files.Select(file => new JpegBitmapEncoder { QualityLevel = JpegQuality, Frames = { BitmapFrame.Create(OnWhite(LoadImage(file))) } }), progress, files.Count);
+            return output;
+        });
+    }
+
+    /// <summary>Verilen klasörde, özgün dosyanın adıyla; varsa "ad (2)". Uzantı boşsa klasör adı.</summary>
+    public static string FreePath(string file, string extension, string folder)
+    {
+        string directory = folder;
         string name = Path.GetFileNameWithoutExtension(file);
         string path = Path.Combine(directory, name + extension);
         for (int number = 2; File.Exists(path) || Directory.Exists(path); number++)
@@ -180,16 +210,9 @@ internal static class FileConversions
     /// En büyük kare (ICO'da en büyük boy, GIF ve TIFF'te ilk kare). Telefon fotoğraflarındaki yön bilgisi görüntüye
     /// işlenir, çünkü yeni dosyada üst bilgi yok. JPEG, BMP ve GIF saydamlık tutmaz: saydam yerler beyaz olur.
     /// </summary>
-    private static string ConvertImage(string file, ConversionTarget target)
+    private static string ConvertImage(string file, string folder, ConversionTarget target)
     {
-        BitmapSource image;
-        using (var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-        {
-            BitmapDecoder decoder = BitmapDecoder.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            BitmapFrame frame = decoder.Frames.MaxBy(candidate => candidate.PixelWidth * candidate.PixelHeight)!;
-            image = Oriented(frame, Orientation(frame));
-        }
-
+        BitmapSource image = LoadImage(file);
         BitmapEncoder encoder;
         switch (target.Extension)
         {
@@ -214,7 +237,7 @@ internal static class FileConversions
         }
 
         encoder.Frames.Add(BitmapFrame.Create(image));
-        string output = FreePath(file, target.Extension);
+        string output = FreePath(file, target.Extension, folder);
         using var stream = new FileStream(output, FileMode.CreateNew);
         try
         {
@@ -227,6 +250,15 @@ internal static class FileConversions
             throw;
         }
         return output;
+    }
+
+    /// <summary>En büyük kare, yönü düzeltilmiş.</summary>
+    private static BitmapSource LoadImage(string file)
+    {
+        using var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        BitmapDecoder decoder = BitmapDecoder.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        BitmapFrame frame = decoder.Frames.MaxBy(candidate => candidate.PixelWidth * candidate.PixelHeight)!;
+        return Oriented(frame, Orientation(frame));
     }
 
     private static ushort Orientation(BitmapFrame frame)
@@ -303,7 +335,7 @@ internal static class FileConversions
     /// Uyarılar ve makrolar kapalı. Parolalı belge sorulmaz: sahte parola hatayla döner. Word kullanıcının açık
     /// Word'ü çıkarsa (belge açıksa) yalnızca bizim belge kapanır.
     /// </summary>
-    private static string ConvertWithWord(string file, ConversionTarget target)
+    private static string ConvertWithWord(string file, string folder, ConversionTarget target)
     {
         dynamic word = Office("Word.Application");
         bool ours = word.Documents.Count == 0 && !word.Visible;
@@ -314,7 +346,7 @@ internal static class FileConversions
             word.AutomationSecurity = MacrosOff;
             document = word.Documents.Open(FileName: file, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false,
                 PasswordDocument: "\u0001", Visible: false, NoEncodingDialog: true);
-            string output = FreePath(file, target.Extension);
+            string output = FreePath(file, target.Extension, folder);
             document.SaveAs2(FileName: output, FileFormat: target.Extension == ".pdf" ? WordPdf : WordDocx, AddToRecentFiles: false);
             return output;
         }
@@ -328,7 +360,7 @@ internal static class FileConversions
         }
     }
 
-    private static string ConvertWithExcel(string file)
+    private static string ConvertWithExcel(string file, string folder)
     {
         dynamic excel = Office("Excel.Application");
         bool ours = excel.Workbooks.Count == 0 && !excel.Visible;
@@ -339,7 +371,7 @@ internal static class FileConversions
             excel.AutomationSecurity = MacrosOff;
             workbook = excel.Workbooks.Open(Filename: file, UpdateLinks: 0, ReadOnly: true, Password: "\u0001",
                 IgnoreReadOnlyRecommended: true, Notify: false, AddToMru: false);
-            string output = FreePath(file, ".pdf");
+            string output = FreePath(file, ".pdf", folder);
             workbook.ExportAsFixedFormat(Type: ExcelPdf, Filename: output);
             return output;
         }
@@ -354,7 +386,7 @@ internal static class FileConversions
     }
 
     /// <summary>PowerPoint tek kopya çalışır: açıksa onun içinde, pencere açmadan.</summary>
-    private static string ConvertWithPowerPoint(string file)
+    private static string ConvertWithPowerPoint(string file, string folder)
     {
         dynamic powerPoint = Office("PowerPoint.Application");
         bool ours = powerPoint.Presentations.Count == 0 && powerPoint.Visible == 0;
@@ -364,7 +396,7 @@ internal static class FileConversions
             powerPoint.DisplayAlerts = PowerPointNoAlerts;
             powerPoint.AutomationSecurity = MacrosOff;
             presentation = powerPoint.Presentations.Open(FileName: file, ReadOnly: -1, Untitled: 0, WithWindow: 0);
-            string output = FreePath(file, ".pdf");
+            string output = FreePath(file, ".pdf", folder);
             presentation.SaveAs(FileName: output, FileFormat: PowerPointPdf);
             return output;
         }
@@ -387,20 +419,20 @@ internal static class FileConversions
 
     #region PDF pages
     /// <summary>Tek sayfa "ad.png"; çok sayfa "ad" klasöründe "Sayfa 1.png" ... (kullanıcının seçtiği hedef: her sayfa).</summary>
-    private static async Task<string> RenderPdfPagesAsync(string file, IProgress<double> progress, CancellationToken token)
+    private static async Task<string> RenderPdfPagesAsync(string file, string folder, IProgress<double> progress, CancellationToken token)
     {
         PdfDocument pdf = await PdfDocument.LoadFromFileAsync(await StorageFile.GetFileFromPathAsync(file));
         uint count = pdf.PageCount;
-        string output = count == 1 ? FreePath(file, ".png") : FreePath(file, "");
-        StorageFolder folder;
+        string output = count == 1 ? FreePath(file, ".png", folder) : FreePath(file, "", folder);
+        StorageFolder pages;
         if (count == 1)
         {
-            folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(output)!);
+            pages = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(output)!);
         }
         else
         {
             Directory.CreateDirectory(output);
-            folder = await StorageFolder.GetFolderFromPathAsync(output);
+            pages = await StorageFolder.GetFolderFromPathAsync(output);
         }
 
         for (uint i = 0; i < count; i++)
@@ -409,7 +441,7 @@ internal static class FileConversions
             using PdfPage page = pdf.GetPage(i);
             var options = new PdfPageRenderOptions { DestinationWidth = (uint)Math.Round(page.Size.Width * PdfScale) };
             string name = count == 1 ? Path.GetFileName(output) : $"Sayfa {i + 1}.png";
-            StorageFile image = await folder.CreateFileAsync(name, CreationCollisionOption.FailIfExists);
+            StorageFile image = await pages.CreateFileAsync(name, CreationCollisionOption.FailIfExists);
             using (var stream = await image.OpenAsync(FileAccessMode.ReadWrite))
             {
                 await page.RenderToStreamAsync(stream, options);
@@ -422,7 +454,7 @@ internal static class FileConversions
 
     #region Media
     /// <summary>Videodan ses hedefi seçilirse görüntü atılır. Donanım hızlandırma açık.</summary>
-    private static async Task<string> TranscodeAsync(string file, ConversionTarget target, IProgress<double> progress, CancellationToken token)
+    private static async Task<string> TranscodeAsync(string file, string folder, ConversionTarget target, IProgress<double> progress, CancellationToken token)
     {
         MediaEncodingProfile profile = target.Extension switch
         {
@@ -435,9 +467,9 @@ internal static class FileConversions
         };
 
         StorageFile source = await StorageFile.GetFileFromPathAsync(file);
-        string output = FreePath(file, target.Extension);
-        StorageFolder folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(output)!);
-        StorageFile destination = await folder.CreateFileAsync(Path.GetFileName(output), CreationCollisionOption.FailIfExists);
+        string output = FreePath(file, target.Extension, folder);
+        StorageFolder outputFolder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(output)!);
+        StorageFile destination = await outputFolder.CreateFileAsync(Path.GetFileName(output), CreationCollisionOption.FailIfExists);
         try
         {
             var transcoder = new MediaTranscoder { HardwareAccelerationEnabled = true };

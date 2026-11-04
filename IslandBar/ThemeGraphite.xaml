@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
     <!-- Grafit tema: cam yok, opak koyu gri (siyah değil; Apple'ın koyu modundaki yükseltilmiş yüzey gibi; koyu pencerelerin önünde de ayrılsın diye #1C1C1E ile #2C2C2E arasında). Koyu zeminde gölge
@@ -21,6 +21,10 @@
     <!-- Vurgu: camdaki gibi kırık beyaz dolgu, üstünde grafit. Koyu zeminde tek parlak yüzey bu. -->
     <SolidColorBrush x:Key="AccentFill" Color="#ECECEF" />
     <SolidColorBrush x:Key="AccentInk" Color="#1A1B1E" />
+    <!-- Kutudan sürüklerken imlecin yanındaki sayı etiketi; her zeminde okunsun. -->
+    <SolidColorBrush x:Key="DragBadgeFill" Color="#F02A2B2F" />
+    <SolidColorBrush x:Key="DragBadgeText" Color="#EDEDF0" />
+    <SolidColorBrush x:Key="DragBadgeEdge" Color="#26FFFFFF" />
     <SolidColorBrush x:Key="OnAccentHover" Color="#14000000" />
     <SolidColorBrush x:Key="OnAccentDivider" Color="#26000000" />
     <SolidColorBrush x:Key="FolderGradient" Color="#F2A93B" />

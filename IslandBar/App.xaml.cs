@@ -120,6 +120,7 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         UiStallWatch.Attach(Dispatcher);
+        FrameWatch.StartIfRequested(Dispatcher, e.Args);
         GlassCard.AttachToPopups();
         _settings = AppSettings.Load();
         ThemeManager.Apply(_settings.Theme);
@@ -344,7 +345,7 @@ public partial class App : Application
             }
 
             bar.YieldChipSpot();
-            card = new ConvertCard(island, bar.AppBarEdge, bar.IsIslandHidden);
+            card = new ConvertCard(island, bar.AppBarEdge, bar.IsIslandHidden, bar.IsClockChipShown);
             card.Show();
         }
         card.AddFiles(files);

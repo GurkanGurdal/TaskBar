@@ -32,7 +32,9 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   (önceki çalışma temiz kapanmadıysa açılışta geri alır), bekçi süreç (`--watchdog <pid>`; hatada yeniden başlatır,
   5 dakikada en çok 3). Ayrıntı notlarda (MVP 9).
   Gezgin dışından (terminal, ajan) başlatılan Release çubuğu kendini Gezgin'e başlattırır (`JobEscape`): başlatanın işiyle
-  birlikte iz bırakmadan ölüyordu.
+  birlikte iz bırakmadan ölüyordu. Claude uygulaması paketli (MSIX): kabuğundan başlayan süreç AppData'da gerçekte olmayan
+  klasörü paketin kopyasına yazar, kullanıcının verisi gerçek yerdedir; paketin içinden görünmeyeni Gezgin'in başlattığı
+  süreçle oku (notlarda "Paket sanallaştırması").
 - Her ekrana bir `BarWindow` (ana ekran önce); ekran düzeni değişince hepsi kapatılıp açılır. Tepsi, hızlı ayarlar,
   şarkı kartı, ses göstergesi yalnızca ana ekranda.
 - Tasarım: ekranın ortasında tek ada (Başlat, Düzenler | uygulamalar | tepsi düğmesi, hızlı ayarlar, saat).
@@ -43,9 +45,11 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   çevrilir, seçimin altında balon; açıkken
   şarkı kartının yerinde Kapat düğmeli kalıcı kart (`SetResident`). Google'ın anahtarsız
   ucu istek engelliyor; tarayıcı gibi görünüp engeli aşma.
-- Dönüştür: tekerlekteki araç, adanın üstünde kare kart (`ConvertCard`): dosyalar bırakılır, işlem seçilir, "orijinal kalsın mı"
-  sorulur (hayır: Geri Dönüşüm Kutusu), deste halkaya dürülür, bitince yeni dosyalarla açılır. Dönüşümler kurulu bir şey
-  gerektirmez (`FileConversions`: WIC, Office, Windows PDF, Media Foundation). Alt + sağ tık menüsü denendi, reddedildi.
+- Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
+  (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni
+  dosyalarla çıkar. Kutuda yalnızca dönüşmüş haller (`FileConverter.Root`); sürüklenince bırakılan yere taşınır, kutuda
+  kalanlar kapatınca Geri Dönüşüm Kutusu'na. Dönüşümler kurulu bir şey gerektirmez (`FileConversions`; resimden PDF kendi `ImagePdf`'imiz). Reddedilenler:
+  Alt + sağ tık menüsü, "orijinal kalsın mı" sorusu, halkaya dürülen deste.
 - **Temalar:** Cam (varsayılan, `GlassCapture` ile kendi camı), Beyaz, Grafit. Palet dosyaları `Theme*.xaml`, aynı
   anahtarlar; renkler `StaticResource` (tema değişince çubuklar yeniden açılır). Sabit renk yazma, palete anahtar ekle.
   Camsız temalar `UsesGlass` false; açık zemine özgü davranış `IsLight`'a bağlı. Yeni tema: palet + `BarTheme` +
