@@ -56,8 +56,21 @@ internal sealed class LyricsMode
     private const int MaxRetries = 3;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
-    /// <summary>İkinci ekranda tam ekran (kullanıcı seçti); ekran çıkarılırsa çubuktaki altyazıya döner.</summary>
-    private bool _onSecondScreen;
+    /// <summary>
+    /// Tam ekran sahnenin ekranı (ad). Kip hep tam ekran açılır, ana ekranda da (kullanıcının isteği); altyazı şeridi
+    /// yalnızca küçültülünce. Ekran çıkarılırsa sahne ana ekrana geçer.
+    /// </summary>
+    private string? _stageScreen;
+
+    /// <summary>Şeridin durduğu ekran (null: ana ekran); küçültülmüş sahne şeridini kendi ekranındaki adaya koyar.</summary>
+    private string? _bandScreen;
+
+    private bool BandOnPrimary => _bandScreen == null
+        || System.Windows.Forms.Screen.AllScreens.FirstOrDefault(screen => screen.DeviceName == _bandScreen)?.Primary != false;
+
+    /// <summary>Sahne küçültüldü (kullanıcının tasarımı, seçeneklerden A · Çubuktaki altyazı): sözler şeritte, şeridin tam
+    /// ekran düğmesi sahneyi geri açar.</summary>
+    private bool _minimized;
     private LyricsStage? _stage;
     private string _songTitle = "";
     private string _artist = "";
@@ -85,11 +98,11 @@ internal sealed class LyricsMode
         _stage?.SetFrame(FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers);
     }
 
-    /// <summary>Ana ekrandaki adanın yeri; çubuklar hazır değilse null.</summary>
-    public Func<LyricsPlace?>? PlaceOf { get; set; }
+    /// <summary>Verilen ekrandaki (null: ana ekran) adanın yeri; çubuk hazır değilse null.</summary>
+    public Func<string?, LyricsPlace?>? PlaceOf { get; set; }
 
-    /// <summary>Şerit adanın üstündeki şarkı kartının yerini tutuyor.</summary>
-    public bool HoldsChipSpot => _band?.IsShown == true;
+    /// <summary>Şerit ana ekranda adanın üstündeki şarkı kartının yerini tutuyor (kartlar yalnızca ana ekranda).</summary>
+    public bool HoldsChipSpot => _band?.IsShown == true && BandOnPrimary;
 
     /// <summary>Şerit açılmak üzere: şarkı kartı yer versin.</summary>
     public event Action? Showing;
@@ -104,19 +117,28 @@ internal sealed class LyricsMode
         return System.Windows.Forms.Screen.AllScreens.FirstOrDefault(screen => !screen.Primary);
     }
 
-    /// <summary>Kipi açar: ikinci ekranda tam ekran ya da çubukta altyazı.</summary>
-    public void Start(bool onSecondScreen)
+    /// <summary>Kipi açar: verilen ekranda tam ekran sahne.</summary>
+    public void Start(System.Windows.Forms.Screen stageScreen)
     {
         if (IsOn)
         {
             return;
         }
 
-        _onSecondScreen = onSecondScreen && SecondScreen() != null;
+        _stageScreen = stageScreen.DeviceName;
         SetOn(true);
     }
 
-    public async void SetOn(bool on)
+    private System.Windows.Forms.Screen? StageScreen()
+    {
+        return _stageScreen == null ? null : System.Windows.Forms.Screen.AllScreens.FirstOrDefault(screen => screen.DeviceName == _stageScreen);
+    }
+
+    /// <param name="controlSpotify">
+    /// Kullanıcı açıp kapatınca Spotify da çalar / durur (kullanıcının isteği: açılınca seçili şarkı başlasın, kapatınca
+    /// dursun). Uygulama kapanırken false: çubuğu yeniden başlatmak müziği durdurmasın.
+    /// </param>
+    public async void SetOn(bool on, bool controlSpotify = true)
     {
         if (on == IsOn)
         {
@@ -127,7 +149,12 @@ internal sealed class LyricsMode
         Changed?.Invoke(on);
         if (!on)
         {
+            MediaSession? playing = controlSpotify ? SessionIn(PlaybackStatus.Playing) : null;
             Stop();
+            if (playing != null)
+            {
+                await Send(playing, session => session.TryPauseAsync().AsTask());
+            }
             return;
         }
 
@@ -143,6 +170,12 @@ internal sealed class LyricsMode
             _manager = manager;
             _manager.SessionsChanged += Manager_SessionsChanged;
             BindSessions();
+
+            // Çalan Spotify yoksa seçili (duraklatılmış) şarkı başlar.
+            if (controlSpotify && SessionIn(PlaybackStatus.Playing) == null && SessionIn(PlaybackStatus.Paused) is { } paused)
+            {
+                await Send(paused, session => session.TryPlayAsync().AsTask());
+            }
             await ReadAsync();
         }
         catch (COMException)
@@ -151,10 +184,13 @@ internal sealed class LyricsMode
         }
     }
 
-    /// <summary>Çubuk gizlenip açıldı (ana ekran).</summary>
-    public void FollowBar(bool barHidden)
+    /// <summary>Bir ekrandaki çubuk gizlenip açıldı: şerit o ekrandaysa onu izler.</summary>
+    public void FollowBar(string screen, bool primary, bool barHidden)
     {
-        _band?.FollowBar(barHidden);
+        if (primary ? BandOnPrimary : _bandScreen == screen)
+        {
+            _band?.FollowBar(barHidden);
+        }
     }
 
     private void Stop()
@@ -176,7 +212,35 @@ internal sealed class LyricsMode
         _band = null;
         _stage?.Close();
         _stage = null;
-        _onSecondScreen = false;
+        _stageScreen = null;
+        _bandScreen = null;
+        _minimized = false;
+    }
+
+    /// <summary>Sahne kapanır, sözler çubuktaki altyazıya iner (ikinci ekrandaki pencereler kullanılabilsin).</summary>
+    private void Minimize()
+    {
+        if (_stageScreen == null || _minimized)
+        {
+            return;
+        }
+
+        _minimized = true;
+        _stage?.Close();
+        _stage = null;
+        Tick();
+    }
+
+    /// <summary>Şeridin tam ekran düğmesi: sahne ikinci ekranda yeniden açılır.</summary>
+    private void Expand()
+    {
+        if (!_minimized)
+        {
+            return;
+        }
+
+        _minimized = false;
+        Tick();
     }
 
     private void Manager_SessionsChanged(MediaManager sender, SessionsChangedEventArgs args)
@@ -350,22 +414,34 @@ internal sealed class LyricsMode
             return;
         }
 
-        // İkinci ekran çıkarıldıysa çubuktaki altyazıya dönülür.
-        if (_onSecondScreen && SecondScreen() is not { } second)
+        // Sahnenin ekranı çıkarıldıysa sahne ana ekrana geçer.
+        System.Windows.Forms.Screen? stageScreen = StageScreen();
+        if (_stageScreen != null && stageScreen == null && System.Windows.Forms.Screen.PrimaryScreen is { } primary)
         {
-            _onSecondScreen = false;
+            _stageScreen = primary.DeviceName;
+            stageScreen = primary;
             _stage?.Close();
             _stage = null;
         }
-        else if (_onSecondScreen)
+        if (stageScreen != null && !_minimized)
         {
-            TickStage(SecondScreen()!);
+            _band?.Conceal();
+            TickStage(stageScreen);
             return;
         }
 
-        LyricsPlace? place = PlaceOf?.Invoke();
-        bool wanted = place != null && !place.FullScreen && _playing != null && _trackKey != null && ConvertCard.Current == null
-            && DateTime.UtcNow < _problemUntil;
+        // Küçültülmüş sahnenin şeridi kendi ekranındaki adada (kullanıcının isteği), hep görünür (tam ekran düğmesi
+        // kaybolmasın), çalan yoksa da. Şerit başka ekrandaysa yeniden kurulur.
+        string? bandScreen = _minimized ? _stageScreen : null;
+        if (_band != null && bandScreen != _bandScreen)
+        {
+            _band.Close();
+            _band = null;
+        }
+        _bandScreen = bandScreen;
+        LyricsPlace? place = PlaceOf?.Invoke(bandScreen);
+        bool wanted = place != null && !place.FullScreen && ConvertCard.Current == null
+            && (_minimized || _playing != null && _trackKey != null && DateTime.UtcNow < _problemUntil);
         if (!wanted)
         {
             _band?.Conceal();
@@ -377,11 +453,18 @@ internal sealed class LyricsMode
             _band = new LyricsBand(place!.Island, place.Edge, place.BarHidden);
         }
 
-        (string current, string next) = Lines();
+        (string current, string next) = _minimized && (_playing == null || _trackKey == null)
+            ? ("Sözler", "Spotify'da bir şarkı çalınca burada")
+            : Lines();
         _band.SetLines(current, next);
+        _band.SetButtons(_minimized ? Expand : null, _minimized ? () => SetOn(false) : null);
+        _band.TrackPointer();
         if (!_band.IsShown)
         {
-            Showing?.Invoke();
+            if (BandOnPrimary)
+            {
+                Showing?.Invoke();
+            }
             _band.Present();
         }
     }
@@ -395,7 +478,7 @@ internal sealed class LyricsMode
         if (_stage == null)
         {
             _stage = new LyricsStage(screen.Bounds, FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers,
-                new LyricsCommands(PlayPause, Previous, Next, Seek, () => SetOn(false)));
+                new LyricsCommands(PlayPause, Previous, Next, Seek, () => SetOn(false), Minimize));
             _stage.Show();
         }
 
@@ -485,11 +568,14 @@ internal sealed class LyricsMode
 
     private async Task Command(Func<MediaSession, Task<bool>> send)
     {
-        if (_playing is not { } session)
+        if (_playing is { } session)
         {
-            return;
+            await Send(session, send);
         }
+    }
 
+    private static async Task Send(MediaSession session, Func<MediaSession, Task<bool>> send)
+    {
         try
         {
             await send(session);
@@ -497,6 +583,18 @@ internal sealed class LyricsMode
         catch (COMException)
         {
             // Spotify kapanıyor.
+        }
+    }
+
+    private MediaSession? SessionIn(PlaybackStatus status)
+    {
+        try
+        {
+            return _sessions.FirstOrDefault(session => session.GetPlaybackInfo().PlaybackStatus == status);
+        }
+        catch (COMException)
+        {
+            return null;
         }
     }
 

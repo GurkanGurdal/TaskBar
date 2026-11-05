@@ -915,8 +915,8 @@ public partial class BarWindow : AppBarWindow
         if (Screen.Primary)
         {
             ConvertCard.Current?.FollowBar(IsIslandOffScreen());
-            LyricsMode.Shared.FollowBar(IsIslandOffScreen());
         }
+        LyricsMode.Shared.FollowBar(Screen.DeviceName, Screen.Primary, IsIslandOffScreen());
 
         // Başlat kontrolü süreç adı okuyor, pencereleri dolaşmak da sistem çağrısı; imleç kadar sık gerekmiyor.
         if (++_autoHideTicks % 4 == 0)

@@ -54,6 +54,11 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   sağa; giriş satırın ritminden (çarpma, maskeden kayma, harf harf, netleşme, süzülme). Reddedilen: hepsinde aynı hareket.
   Şarkının kipi sözlerin hece hızından (sakin / orta / hareketli); sakinde boy farkı küçük, ortada, yalnızca yumuşak
   netleşme, renk yalnızca nakaratta.
+  Sahnede Küçült: sözler adanın üstündeki şeride iner, şeridin tam ekran düğmesi geri açar (şerit yalnızca düğmede
+  tıklanır).
+  Kip hep tam ekran (ana ekranda da); tekerlek ikinci ekrandaysa sahne sormadan orada, ana ekrandaysa sorulur. Küçük
+  şerit sahnenin ekranındaki adada, tam ekran ve kapat düğmeli. Açılınca Spotify çalar, kapatınca durur (uygulama
+  kapanırken durmaz). Testte sahte oturumu önce çalar başlat: yoksa kullanıcının Spotify'ı başlar.
   Spotify'ın kendi söz ucu kullanılmaz (oturum anahtarı ister).
 - Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
   (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni

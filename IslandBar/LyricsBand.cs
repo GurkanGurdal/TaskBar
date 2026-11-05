@@ -13,6 +13,8 @@ namespace IslandBar;
 /// Şarkı sözü altyazısı (kullanıcının tasarımı, seçeneklerden B · Altyazı): adanın üstünde, şarkı kartının yerinde ortalı
 /// cam şerit. O anki satır büyük, sıradaki altında soluk; satır değişince eskisi yukarı kayıp gider, sıradaki yerine
 /// kayar. Çubuk gizliyken adanın durduğu yerde (şarkı kartı gibi). Fareyi geçirir: bir şeyin üstüne binse de engel olmaz.
+/// Sahne küçültülünce sağında tam ekran ve kapat düğmeleri olur; yalnızca imleç bir düğmenin üstündeyken tıklanır,
+/// şeridin gerisi yine fareyi geçirir (imleç <see cref="TrackPointer"/> ile izlenir).
 /// </summary>
 internal sealed class LyricsBand : Window
 {
@@ -53,6 +55,16 @@ internal sealed class LyricsBand : Window
     private bool _hiding;
     private string _currentLine = "";
     private string _nextLine = "";
+    private const double ExpandSize = 34;
+    private const double ExpandInset = 10;
+    private const double ButtonGap = 2;
+    private readonly Border _expand;
+    private readonly Border _shut;
+    private Action? _expandAction;
+    private Action? _shutAction;
+    private bool _clickable;
+    private double _textLeft = 12;
+    private double _textWidth = BandWidth - 24;
 
     public LyricsBand(System.Drawing.Rectangle island, AppBarEdge edge, bool barHidden)
     {
@@ -67,10 +79,15 @@ internal sealed class LyricsBand : Window
         ShowActivated = false;
         Topmost = true;
         IsHitTestVisible = false;
+        Focusable = false;
         SizeToContent = SizeToContent.WidthAndHeight;
         FontFamily = (FontFamily)FindResource("UiFont");
 
         _lines = new Canvas { Width = BandWidth, Height = BandHeight, ClipToBounds = true };
+        _expand = BandButton("\uE740", 14, "Tam ekran", () => _expandAction?.Invoke());
+        _shut = BandButton("\uE711", 12, "Sözleri kapat", () => _shutAction?.Invoke());
+        Canvas.SetLeft(_shut, BandWidth - ExpandInset - ExpandSize);
+        Canvas.SetLeft(_expand, BandWidth - ExpandInset - 2 * ExpandSize - ButtonGap);
         _current = Line(current: true);
         _next = Line(current: false);
         _lines.Children.Add(_current);
@@ -95,6 +112,99 @@ internal sealed class LyricsBand : Window
     }
 
     public bool IsShown => _shown && !_hiding;
+
+    private Border BandButton(string glyph, double size, string tip, Action click)
+    {
+        var button = new Border
+        {
+            Width = ExpandSize,
+            Height = ExpandSize,
+            CornerRadius = new CornerRadius(9),
+            Background = Brushes.Transparent,
+            Visibility = Visibility.Collapsed,
+            ToolTip = tip,
+            Child = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+                FontSize = size,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("TextPrimary")
+            }
+        };
+        Canvas.SetTop(button, (BandHeight - ExpandSize) / 2);
+        button.MouseEnter += (_, _) => button.Background = (Brush)FindResource("HoverBrush");
+        button.MouseLeave += (_, _) => button.Background = Brushes.Transparent;
+        button.MouseLeftButtonUp += (_, _) => click();
+        _lines.Children.Add(button);
+        return button;
+    }
+
+    /// <summary>Tam ekran ve kapat düğmeleri (null: yok). Düğmeler varken satırlar onlara yer bırakır.</summary>
+    public void SetButtons(Action? expand, Action? shut)
+    {
+        _expandAction = expand;
+        _shutAction = shut;
+        bool shown = expand != null;
+        if (shown == (_expand.Visibility == Visibility.Visible))
+        {
+            return;
+        }
+
+        _expand.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        _shut.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        // Satırlar soldan başlar, yalnızca düğmelerin yanında daralır (iki yandan daralınca erken kesiliyordu).
+        _textLeft = 12;
+        _textWidth = BandWidth - _textLeft - (shown ? ExpandInset + 2 * ExpandSize + ButtonGap + 4 : 12);
+        foreach (TextBlock line in _lines.Children.OfType<TextBlock>())
+        {
+            line.Width = _textWidth;
+            Canvas.SetLeft(line, _textLeft);
+        }
+        if (!shown)
+        {
+            SetClickable(false);
+        }
+    }
+
+    /// <summary>
+    /// İmleç bir düğmenin üstündeyse pencere tıklanır olur, değilse yine fareyi geçirir (kip her 100 ms'de çağırır).
+    /// </summary>
+    public void TrackPointer()
+    {
+        bool over = false;
+        if (_expandAction != null && IsShown && _expand.IsVisible && GetCursorPos(out NativePoint cursor))
+        {
+            over = Contains(_expand, cursor) || Contains(_shut, cursor);
+        }
+        SetClickable(over);
+    }
+
+    private static bool Contains(FrameworkElement button, NativePoint cursor)
+    {
+        Point topLeft = button.PointToScreen(new Point(0, 0));
+        Point bottomRight = button.PointToScreen(new Point(button.ActualWidth, button.ActualHeight));
+        return cursor.X >= topLeft.X && cursor.X < bottomRight.X && cursor.Y >= topLeft.Y && cursor.Y < bottomRight.Y;
+    }
+
+    private void SetClickable(bool clickable)
+    {
+        if (clickable == _clickable || PresentationSource.FromVisual(this) is not HwndSource source)
+        {
+            return;
+        }
+
+        _clickable = clickable;
+        IsHitTestVisible = clickable;
+        int style = GetWindowLong(source.Handle, ExStyle);
+        SetWindowLong(source.Handle, ExStyle, clickable ? style & ~ExTransparent : style | ExTransparent);
+        if (!clickable)
+        {
+            _expand.Background = Brushes.Transparent;
+            _shut.Background = Brushes.Transparent;
+        }
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -255,7 +365,7 @@ internal sealed class LyricsBand : Window
     {
         var line = new TextBlock
         {
-            Width = BandWidth - 24,
+            Width = _textWidth,
             TextAlignment = TextAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             FontSize = current ? 14 : 11.5,
@@ -264,7 +374,7 @@ internal sealed class LyricsBand : Window
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = new TranslateTransform()
         };
-        Canvas.SetLeft(line, 12);
+        Canvas.SetLeft(line, _textLeft);
         Canvas.SetTop(line, 0);
         return line;
     }
@@ -384,6 +494,16 @@ internal sealed class LyricsBand : Window
 
     [DllImport("user32")]
     private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32")]
+    private static extern bool GetCursorPos(out NativePoint point);
 
     [DllImport("user32", EntryPoint = "GetWindowLongW")]
     private static extern int GetWindowLong(IntPtr window, int index);

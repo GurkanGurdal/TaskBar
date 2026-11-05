@@ -95,7 +95,7 @@
                 <ComboBox Width="260" HorizontalAlignment="Left" SelectedIndex="{Binding LyricsScreen}">
                     <ComboBoxItem Content="Sor" />
                     <ComboBoxItem Content="İkinci ekranda tam ekran" />
-                    <ComboBoxItem Content="Çubuğun üstünde altyazı" />
+                    <ComboBoxItem Content="Ana ekranda tam ekran" />
                 </ComboBox>
                 <TextBlock Text="İkinci ekrandaki çerçeve" Margin="0,12,0,4" />
                 <ComboBox Width="260" HorizontalAlignment="Left" SelectedIndex="{Binding LyricsFrame}">

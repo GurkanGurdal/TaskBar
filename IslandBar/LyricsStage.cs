@@ -25,7 +25,7 @@ internal sealed record LyricsView(string Key, string Text, string Next, TimeSpan
 }
 
 /// <summary>Sahnenin düğmeleri: Spotify'a Windows'un medya denetimiyle gider.</summary>
-internal sealed record LyricsCommands(Action PlayPause, Action Previous, Action Next, Action<TimeSpan> Seek, Action Close);
+internal sealed record LyricsCommands(Action PlayPause, Action Previous, Action Next, Action<TimeSpan> Seek, Action Close, Action Minimize);
 
 /// <summary>
 /// İkinci ekranda tam ekran sözler (kullanıcının tasarımı, seçeneklerden C · Poster): arka planda kapağın karartılmış ve
@@ -99,7 +99,7 @@ internal sealed class LyricsStage : Window
     private readonly ImageBrush _coverImage = new() { Stretch = Stretch.UniformToFill };
     private readonly TextBlock _title;
     private readonly TextBlock _artist;
-    private readonly Border _close;
+    private readonly StackPanel _close;
     private readonly DispatcherTimer _idle;
     private readonly SolidColorBrush _accent = new(Colors.White);
     private readonly SolidColorBrush _accentPast = new(Colors.White) { Opacity = 0.45 };
@@ -278,19 +278,21 @@ internal sealed class LyricsStage : Window
         };
         _mapHost.MouseLeave += (_, _) => Fade(_tip, 0, 120);
 
-        _close = new Border
+        // Sağ üstte Küçült (sözler çubuktaki altyazıya iner, ikinci ekran boşalır; kullanıcının isteği: tam ekranda
+        // Spotify'a ulaşamıyordu) ve Kapat.
+        _close = new StackPanel
         {
+            Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 40, 44, 0),
-            Padding = new Thickness(14, 7, 14, 8),
-            CornerRadius = new CornerRadius(9),
-            Background = (Brush)FindResource("LyricsStageButton"),
-            Cursor = Cursors.Hand,
             Opacity = 0,
-            Child = new TextBlock { Text = "Sözleri kapat", FontSize = 13, Foreground = (Brush)FindResource("LyricsStageText") }
+            Children =
+            {
+                CornerButton("\uE73F", "Küçült", () => _commands.Minimize()),
+                CornerButton(null, "Sözleri kapat", () => _commands.Close())
+            }
         };
-        _close.MouseLeftButtonUp += (_, _) => _commands.Close();
 
         _root.Children.Add(_backdrop);
         _root.Children.Add(_frame);
@@ -335,6 +337,38 @@ internal sealed class LyricsStage : Window
         MouseLeave += (_, _) => SetBarOpen(false);
         KeyDown += Stage_KeyDown;
         Cursor = Cursors.None;
+    }
+
+    private Border CornerButton(string? glyph, string label, Action click)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        if (glyph != null)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = glyph,
+                FontFamily = Icons,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 1, 7, 0),
+                Foreground = (Brush)FindResource("LyricsStageText")
+            });
+        }
+        content.Children.Add(new TextBlock { Text = label, FontSize = 13, Foreground = (Brush)FindResource("LyricsStageText") });
+        Brush rest = (Brush)FindResource("LyricsStageButton");
+        var button = new Border
+        {
+            Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(14, 7, 14, 8),
+            CornerRadius = new CornerRadius(9),
+            Background = rest,
+            Cursor = Cursors.Hand,
+            Child = content
+        };
+        button.MouseEnter += (_, _) => button.Background = (Brush)FindResource("LyricsStageButtonHover");
+        button.MouseLeave += (_, _) => button.Background = rest;
+        button.MouseLeftButtonUp += (_, _) => click();
+        return button;
     }
 
     private Border CreateButton(TextBlock glyph, double size, bool filled, Action click)

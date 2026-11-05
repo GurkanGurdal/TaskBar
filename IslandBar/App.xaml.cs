@@ -143,7 +143,8 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(OpenSettings), null, Timeout.Infinite, false);
 
         ClaudeHook.Listen(note => Dispatcher.BeginInvoke(() => ShowClaudeNote(note)));
-        LyricsMode.Shared.PlaceOf = () => _bars.FirstOrDefault(bar => bar.Screen.Primary) is { } bar && bar.TryGetIslandRestRect(out System.Drawing.Rectangle island)
+        LyricsMode.Shared.PlaceOf = screen => _bars.FirstOrDefault(bar => screen == null ? bar.Screen.Primary : bar.Screen.DeviceName == screen) is { } bar
+            && bar.TryGetIslandRestRect(out System.Drawing.Rectangle island)
             ? new LyricsPlace(island, bar.AppBarEdge, bar.IsIslandHidden, bar.IsFullScreenHere)
             : null;
         LyricsMode.Shared.Showing += () => _bars.FirstOrDefault(bar => bar.Screen.Primary)?.YieldChipSpot();
@@ -319,18 +320,25 @@ public partial class App : Application
         }
         if (kind == ToolKind.Lyrics)
         {
-            // Kartı yok: kip açılır ya da kapanır. İkinci ekran varsa nerede açılacağı bir kez sorulur (kullanıcının seçimi).
+            // Kartı yok: kip açılır ya da kapanır, hep tam ekran. Tekerlek ikinci ekrandaysa sahne sormadan orada açılır;
+            // ana ekrandaysa ve ikinci ekran varsa nerede açılacağı sorulur ("Bir daha sorma" hatırlanır; kullanıcının
+            // seçimleri), yoksa ana ekranda.
+            System.Windows.Forms.Screen ringScreen = System.Windows.Forms.Screen.FromPoint(center);
             if (LyricsMode.Shared.IsOn)
             {
                 LyricsMode.Shared.SetOn(false);
             }
+            else if (!ringScreen.Primary)
+            {
+                LyricsMode.Shared.Start(ringScreen);
+            }
             else if (LyricsMode.SecondScreen() == null || _settings!.LyricsScreen == 2)
             {
-                LyricsMode.Shared.Start(onSecondScreen: false);
+                LyricsMode.Shared.Start(ringScreen);
             }
             else if (_settings.LyricsScreen == 1)
             {
-                LyricsMode.Shared.Start(onSecondScreen: true);
+                LyricsMode.Shared.Start(LyricsMode.SecondScreen()!);
             }
             else
             {
@@ -340,7 +348,7 @@ public partial class App : Application
                     {
                         _settings.LyricsScreen = second ? 1 : 2;
                     }
-                    LyricsMode.Shared.Start(second);
+                    LyricsMode.Shared.Start(second && LyricsMode.SecondScreen() is { } other ? other : ringScreen);
                 }).Show();
             }
             return;
@@ -564,7 +572,7 @@ public partial class App : Application
         _trayIcon?.Dispose();
         _toolsKeyWatcher?.Dispose();
         TranslateMode.Shared.SetOn(false);
-        LyricsMode.Shared.SetOn(false);
+        LyricsMode.Shared.SetOn(false, controlSpotify: false);
         ScreenshotHistory.Shared.StopWatching();
 
         // Tepsi servisi kapanmadan: Windows çubuğuna giden mesajlar onun üzerinden geçiyor.

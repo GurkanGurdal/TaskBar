@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
@@ -115,8 +117,42 @@ internal sealed class LyricsPrompt : Window
         }
         await _card.RefreshGlassAsync(animateTint: false, isHidden: true);
         _card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(SystemParameters.ClientAreaAnimation ? 140 : 0)));
+        TakeForeground();
+    }
+
+    /// <summary>
+    /// Tekerlek kapanınca ön plan önceki pencereye dönüyor, Windows sonradan gelen `Activate`'i reddediyor: soru öne
+    /// geçemeyince Esc ve dışarı tıklama ona ulaşmıyordu (sınamada görüldü). Öndeki pencerenin girdisine bir an bağlanıp
+    /// öne geçer (çubuktaki Başlat'ın yöntemi).
+    /// </summary>
+    private void TakeForeground()
+    {
+        IntPtr foreground = GetForegroundWindow();
+        uint foregroundThread = GetWindowThreadProcessId(foreground, out _);
+        uint thisThread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+        SetForegroundWindow(new WindowInteropHelper(this).Handle);
+        if (attached)
+        {
+            AttachThreadInput(thisThread, foregroundThread, false);
+        }
         Activate();
     }
+
+    [DllImport("user32")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+
+    [DllImport("user32")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32")]
+    private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
+    [DllImport("kernel32")]
+    private static extern uint GetCurrentThreadId();
 
     private void Finish(bool second)
     {
