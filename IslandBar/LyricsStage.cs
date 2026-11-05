@@ -31,8 +31,8 @@ internal sealed record LyricsCommands(Action PlayPause, Action Previous, Action 
 /// İkinci ekranda tam ekran sözler (kullanıcının tasarımı, seçeneklerden C · Poster): arka planda kapağın karartılmış ve
 /// bulanık hali (kapak yoksa düz koyu; kullanıcının isteği, ilk sürümde düz siyahtı), kenarda ince
 /// çerçeve ve onun üstünde iki karşılıklı parça kovalar (rengi kapaktan; gradyan ve parıltı yok). Satır kelimelere
-/// bölünür, kısa satırlar halinde büyük ve alt alta dizilir; kelimeler sırayla bulanıktan netleşip yukarı oturur
-/// (lyric klip gibi). Altta soluk sıradaki satır, sol altta kapak ve şarkı. Fare kıpırdayınca sağ üstte Kapat çıkar,
+/// bölünür, kısa satırlar halinde büyük ve alt alta dizilir; satırın girişi ritmine göre değişir (çarpma, maskeden kayma,
+/// harf harf, bulanıktan netleşme, yandan süzülme), bazı satırlarda bir kelime kapağın renginde (lyric klip gibi). Altta soluk sıradaki satır, sol altta kapak ve şarkı. Fare kıpırdayınca sağ üstte Kapat çıkar,
 /// durunca imleç de gizlenir. Kelime zamanları LRCLIB'de yok: kelimeler satırın süresine yayılır.
 /// Kontroller (seçeneklerden B · Söz haritası): en altta satırlara bölünmüş ilerleme çizgisi (sözsüz yerler boşluk); bir
 /// parçanın üstünde o satırın sözü çıkar, tıklayınca şarkı oraya gider. Şarkının yanında önceki / oynat / sonraki,
@@ -48,7 +48,6 @@ internal sealed class LyricsStage : Window
     private const double ChaserLine = 3;
     private const double ChaserShare = 0.07;
     private const int ChaseSeconds = 16;
-    private const int RowChars = 11;
     private const int WordMs = 380;
     private const int MaxStaggerMs = 300;
     private const int LeaveMs = 300;
@@ -88,7 +87,7 @@ internal sealed class LyricsStage : Window
 
     /// <summary>Kapak küçük (120 px) gelir: küçük bir resme bulanık çizilip ekrana büyütülür, pikseller görünmez.</summary>
     private const int BackdropWidth = 192;
-    private const double BackdropBlur = 9;
+    private const int BackdropBlurRadius = 4;
     private const int BackdropFadeMs = 900;
     private readonly Canvas _frame = new();
     private readonly Rectangle _chasers;
@@ -294,7 +293,6 @@ internal sealed class LyricsStage : Window
         _close.MouseLeftButtonUp += (_, _) => _commands.Close();
 
         _root.Children.Add(_backdrop);
-        _root.Children.Add(new Rectangle { Fill = (Brush)FindResource("LyricsStageShade"), IsHitTestVisible = false });
         _root.Children.Add(_frame);
         _root.Children.Add(_poster);
         _root.Children.Add(_next);
@@ -527,7 +525,7 @@ internal sealed class LyricsStage : Window
         }
 
         _key = view.Key;
-        ShowLine(view.Text, view.LineLength);
+        ShowLine(view);
     }
 
     /// <summary>Şarkı değişince yeni kapak eskisinin üstünde belirir (arka plan; geçişte kesinti olmasın), eskisi sonra kalkar.</summary>
@@ -548,35 +546,131 @@ internal sealed class LyricsStage : Window
             return;
         }
 
-        var shown = new Image { Source = Blurred(cover), Stretch = Stretch.UniformToFill, Opacity = 0 };
-        RenderOptions.SetBitmapScalingMode(shown, BitmapScalingMode.HighQuality);
+        var shown = new Image { Source = Backdrop(cover), Stretch = Stretch.Fill, Opacity = 0 };
         _backdrop.Children.Add(shown);
         shown.BeginAnimation(OpacityProperty, new DoubleAnimation(1, duration));
     }
 
-    /// <summary>Kapağın ekran oranında kırpılmış, bulanık küçük hali; kenarları saydamlaşmasın diye taşarak çizilir.</summary>
-    private BitmapSource Blurred(BitmapSource cover)
+    /// <summary>
+    /// Arka plan: kapağın ekran oranında kırpılmış, bulanık ve karartılmış hali, ekran boyunda tek opak resim; ekranda 1:1.
+    /// Bulanıklık, karartma ve büyütme piksellerde elle (değerler 0-255'te kalır). WPF'in büyütme süzgeci (ekran kartında
+    /// da `RenderTargetBitmap`'te de) karanlıkla aydınlığın komşu olduğu yerde sıfırın altına taşıyordu: en karanlık
+    /// yerlerde ton çizgisini izleyen beyaz / siyah çatlaklar çıktı (küçük resmin kendisi temizdi, dosyaya yazılıp bakıldı).
+    /// </summary>
+    private BitmapSource Backdrop(BitmapSource cover)
+    {
+        (byte[] small, int smallWidth, int smallHeight) = Blurred(cover);
+        int width = Math.Max(1, _bounds.Width);
+        int height = Math.Max(1, _bounds.Height);
+        byte[] full = Enlarge(small, smallWidth, smallHeight, width, height);
+        BitmapSource result = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, full, width * 4);
+        result.Freeze();
+        return result;
+    }
+
+    /// <summary>Çift doğrusal büyütme (komşu dört pikselin ağırlıklı ortalaması: aşma yok).</summary>
+    private static byte[] Enlarge(byte[] source, int sourceWidth, int sourceHeight, int width, int height)
+    {
+        var target = new byte[width * height * 4];
+        var left = new int[width];
+        var right = new int[width];
+        var share = new double[width];
+        for (int x = 0; x < width; x++)
+        {
+            double at = Math.Clamp((x + 0.5) * sourceWidth / width - 0.5, 0, sourceWidth - 1);
+            left[x] = (int)at;
+            right[x] = Math.Min(left[x] + 1, sourceWidth - 1);
+            share[x] = at - left[x];
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            double at = Math.Clamp((y + 0.5) * sourceHeight / height - 0.5, 0, sourceHeight - 1);
+            int top = (int)at;
+            int bottom = Math.Min(top + 1, sourceHeight - 1);
+            double down = at - top;
+            int rowTop = top * sourceWidth * 4;
+            int rowBottom = bottom * sourceWidth * 4;
+            int output = y * width * 4;
+            for (int x = 0; x < width; x++)
+            {
+                int a = rowTop + left[x] * 4;
+                int b = rowTop + right[x] * 4;
+                int c = rowBottom + left[x] * 4;
+                int d = rowBottom + right[x] * 4;
+                double across = share[x];
+                for (int channel = 0; channel < 3; channel++)
+                {
+                    double upper = source[a + channel] + (source[b + channel] - source[a + channel]) * across;
+                    double lower = source[c + channel] + (source[d + channel] - source[c + channel]) * across;
+                    target[output + channel] = (byte)(upper + (lower - upper) * down + 0.5);
+                }
+                target[output + 3] = 255;
+                output += 4;
+            }
+        }
+        return target;
+    }
+
+    /// <summary>Kapağın küçük, bulanık (üç geçişli kutu bulanıklığı ≈ Gauss) ve karartılmış hali; Bgr32 pikseller.</summary>
+    private (byte[] Pixels, int Width, int Height) Blurred(BitmapSource cover)
     {
         double ratio = ActualWidth > 0 && ActualHeight > 0 ? ActualHeight / ActualWidth : 9.0 / 16;
         int width = BackdropWidth;
         int height = Math.Max(1, (int)Math.Round(width * ratio));
-        double spill = BackdropBlur * 4;
-        var picture = new Rectangle
+        var picture = new Rectangle { Width = width, Height = height, Fill = new ImageBrush(cover) { Stretch = Stretch.UniformToFill } };
+        picture.Measure(new Size(width, height));
+        picture.Arrange(new Rect(0, 0, width, height));
+        var small = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        small.Render(picture);
+
+        int stride = width * 4;
+        byte[] pixels = new byte[stride * height];
+        small.CopyPixels(pixels, stride, 0);
+        byte[] spare = new byte[pixels.Length];
+        for (int pass = 0; pass < 3; pass++)
         {
-            Width = width + 2 * spill,
-            Height = height + 2 * spill,
-            Fill = new ImageBrush(cover) { Stretch = Stretch.UniformToFill },
-            Effect = new BlurEffect { Radius = BackdropBlur, KernelType = KernelType.Gaussian }
-        };
-        Canvas.SetLeft(picture, -spill);
-        Canvas.SetTop(picture, -spill);
-        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, Children = { picture } };
-        canvas.Measure(new Size(width, height));
-        canvas.Arrange(new Rect(0, 0, width, height));
-        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(canvas);
-        bitmap.Freeze();
-        return bitmap;
+            BoxBlur(pixels, spare, width, height, BackdropBlurRadius, horizontal: true);
+            BoxBlur(spare, pixels, width, height, BackdropBlurRadius, horizontal: false);
+        }
+        // Karartma resmin içinde: üstünde ayrı yarı saydam katman yok.
+        Color shade = ((SolidColorBrush)FindResource("LyricsStageShade")).Color;
+        double keep = 1 - shade.A / 255.0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            pixels[i] = (byte)(pixels[i] * keep + shade.B * (1 - keep));
+            pixels[i + 1] = (byte)(pixels[i + 1] * keep + shade.G * (1 - keep));
+            pixels[i + 2] = (byte)(pixels[i + 2] * keep + shade.R * (1 - keep));
+            pixels[i + 3] = 255;
+        }
+        return (pixels, width, height);
+    }
+
+    /// <summary>Tek yönde kayan ortalama; kenarda son piksel tekrarlanır (kenar kararmasın).</summary>
+    private static void BoxBlur(byte[] source, byte[] target, int width, int height, int radius, bool horizontal)
+    {
+        int lines = horizontal ? height : width;
+        int length = horizontal ? width : height;
+        int step = horizontal ? 4 : width * 4;
+        int span = 2 * radius + 1;
+        for (int line = 0; line < lines; line++)
+        {
+            int origin = horizontal ? line * width * 4 : line * 4;
+            for (int channel = 0; channel < 3; channel++)
+            {
+                int Value(int at) => source[origin + Math.Clamp(at, 0, length - 1) * step + channel];
+                int sum = 0;
+                for (int k = -radius; k <= radius; k++)
+                {
+                    sum += Value(k);
+                }
+                for (int at = 0; at < length; at++)
+                {
+                    target[origin + at * step + channel] = (byte)(sum / span);
+                    sum += Value(at + radius + 1) - Value(at - radius);
+                }
+            }
+        }
     }
 
     /// <summary>Bir satırın haritadaki parçası: başı, sonu, sözü (null: sözsüz şarkıda tek parça).</summary>
@@ -915,99 +1009,456 @@ internal sealed class LyricsStage : Window
         }
     }
 
-    /// <summary>Eski poster yukarı kayıp söner; yenisi kelime kelime gelir.</summary>
-    private void ShowLine(string text, TimeSpan length)
+    /// <summary>
+    /// Satırın girişi, satırın kendi ritminden (kullanıcının seçimi, seçeneklerden A · Ritme göre; hepsi aynı hareketle
+    /// gelmesin): tek kelime büyükten çarpar, hızlı satır (kelime başına 0,55 sn'den az) alttan maskeden kayar, ağır satır
+    /// (1,1 sn'den çok) harf harf yükselir; ötekiler bulanıktan netleşir, maskeden kayar ya da yandan süzülür (metne göre,
+    /// aynı satır hep aynı gelir). Kelime zamanı LRCLIB'de yok: ritim satırın süresinden.
+    /// </summary>
+    private enum Entrance { Rise, Slam, Mask, Drift, Chars, Soft }
+
+    /// <summary>
+    /// Şarkının kipi (kullanıcının isteği: rapte güzel, yavaş şarkıda fazla hareketli ve gereksiz vurgulu): sözlerin söylenme
+    /// hızından, saniyedeki hece (sesli harf sayısı; Türkçe kelimeler uzun, kelime sayısı Türkçe rapi İngilizce popla
+    /// karıştırıyordu). Spotify'ın tempo / enerji ucu yeni uygulamalara kapalı. Ölçülen: baladlar 1,75-2,33, Blinding
+    /// Lights 2,7, rap ve hızlı pop 4,3-5,5.
+    /// </summary>
+    private enum Mood { Calm, Moderate, Lively }
+
+    private const double CalmRate = 2.6;
+    private const double LivelyRate = 3.8;
+    private const string Vowels = "aeiouyıöüâêîôûàáèéìíòóùúäëïÿAEIOUYIÖÜÂÊÎÔÛÀÁÈÉÌÍÒÓÙÚÄËÏİ";
+    private Mood _mood = Mood.Moderate;
+    private IReadOnlyList<LyricLine>? _moodOf;
+    private Mood _blockMood;
+
+    private Mood MoodOf(IReadOnlyList<LyricLine> lines)
+    {
+        if (ReferenceEquals(lines, _moodOf))
+        {
+            return _mood;
+        }
+
+        _moodOf = lines;
+        double syllables = 0;
+        double seconds = 0;
+        for (int i = 0; i + 1 < lines.Count; i++)
+        {
+            double length = Math.Min((lines[i + 1].At - lines[i].At).TotalSeconds, 8);
+            if (lines[i].Text.Length == 0 || length <= 0.3)
+            {
+                continue;
+            }
+            syllables += lines[i].Text.Count(Vowels.Contains);
+            seconds += length;
+        }
+
+        // Sözü az olan (ya da hiç olmayan) şarkıda orta kip.
+        double rate = seconds > 10 ? syllables / seconds : double.NaN;
+        _mood = double.IsNaN(rate) ? Mood.Moderate : rate < CalmRate ? Mood.Calm : rate > LivelyRate ? Mood.Lively : Mood.Moderate;
+        if (!double.IsNaN(rate))
+        {
+            ManagedShell.Common.Logging.ShellLogger.Info($"LyricsStage: hece/sn {rate:0.00}, kip {_mood}");
+        }
+        return _mood;
+    }
+
+    private const double FastWordSeconds = 0.55;
+    private const double SlowWordSeconds = 1.1;
+    private const int CharStaggerMs = 35;
+    private const int KeywordMinScore = 7;
+
+    /// <summary>Vurgulanmayacak kısa ve sık kelimeler (Türkçe ve İngilizce).</summary>
+    private static readonly HashSet<string> SmallWords = new(StringComparer.Ordinal)
+    {
+        "ve", "veya", "ama", "fakat", "bir", "bu", "şu", "o", "de", "da", "ki", "ne", "ben", "sen", "biz", "siz", "onlar",
+        "beni", "seni", "bana", "sana", "benim", "senin", "bizi", "sizi", "mi", "mı", "mu", "mü", "ile", "için", "gibi",
+        "her", "tek", "yine", "çok", "daha", "en", "kadar", "şimdi", "artık", "bile", "hep", "hiç", "nasıl", "neden",
+        "the", "and", "you", "your", "with", "this", "that", "they", "them", "what", "when", "there", "here", "from",
+        "have", "just", "like", "dont", "cant", "wont", "im", "its", "were", "will", "into", "yeah", "baby", "ooh"
+    };
+
+    private readonly Dictionary<string, int> _songWords = [];
+    private IReadOnlyList<LyricLine>? _songWordsOf;
+
+    /// <summary>Dergi dizgisi: vurgulu kelime büyük ve kalın, ötekiler küçük ve ince (boyları satırın temel boyuna göre).</summary>
+    private const double BigScale = 1.25;
+    private const double SmallScale = 0.62;
+    private const double ModerateBigScale = 1.12;
+    private const double ModerateSmallScale = 0.78;
+    private const double ModerateRowUnits = 10;
+    private const double CalmBigScale = 1.08;
+    private const double CalmSmallScale = 0.86;
+    private const int CalmStaggerMs = 450;
+    private const int CalmLeaveMs = 700;
+    private const int SoftMs = 1000;
+
+    /// <summary>Bir satırın en çok genişliği, harf × boy biriminde (vurgusuz satırda eski poster gibi ~11 harf).</summary>
+    private const double RowUnits = 9;
+    private const double PlainRowUnits = 11;
+    private const double GapUnits = 0.35;
+
+    /// <summary>Yazının taban çizgisinin altındaki pay (boyun oranı): farklı boydaki kelimeler taban çizgisine oturur.</summary>
+    private static readonly double Descent = Display.LineSpacing - Display.Baseline is > 0.05 and < 0.6 and var descent ? descent : 0.26;
+
+    private int _blockVariant;
+
+    /// <summary>
+    /// Yeni satır (kullanıcının seçimi: seçeneklerden B · Dergi dizgisi, girişleri A · Ritme göre gibi satırın ritminden):
+    /// satırın vurgulu kelimesi büyük ve kalın (eşiği geçerse kapağın renginde), ötekiler küçük ve ince; satırlar sola,
+    /// ortaya ya da sağa yaslanır (metne göre, aynı satır hep aynı). Büyük kelime kendi vuruşuyla çarpar. Eski satır
+    /// yukarı, sola ya da aşağı çekilerek söner. Vurgulanacak kelime yoksa eski poster gibi hepsi kalın ve ortada.
+    /// </summary>
+    private void ShowLine(LyricsView view)
     {
         if (_block is { } old)
         {
             _block = null;
-            var lift = new TranslateTransform();
-            old.RenderTransform = lift;
-            var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
-            lift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -46, TimeSpan.FromMilliseconds(LeaveMs)) { EasingFunction = ease });
-            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(LeaveMs)) { EasingFunction = ease };
-            fade.Completed += (_, _) => _poster.Children.Remove(old);
-            old.BeginAnimation(OpacityProperty, fade);
+            Leave(old, _blockVariant, _blockMood);
         }
 
+        string text = view.Text;
         if (string.IsNullOrWhiteSpace(text))
         {
             return;
         }
 
-        List<List<string>> rows = Rows(text);
-        double size = FontSizeFor(rows);
-        var block = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        var words = new List<TextBlock>();
-        foreach (List<string> row in rows)
+        List<string> words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        Mood mood = MoodOf(view.Lines);
+        Entrance entrance = EntranceFor(text, words.Count, view.LineLength, mood);
+        (int keyword, bool tinted) = view.Note == null ? KeywordOf(words, view.Lines, mood) : (-1, false);
+        if (words.Count == 1 && view.Note == null)
         {
-            var line = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -size * 0.08, 0, -size * 0.08) };
-            foreach (string word in row)
+            keyword = 0;
+        }
+
+        // Kip dizginin sertliğini belirler: sakinde boy farkı küçük ve satırlar ortada, hareketlide en büyük.
+        (double bigScale, double smallScale, double rowUnits) = mood switch
+        {
+            Mood.Calm => (CalmBigScale, CalmSmallScale, PlainRowUnits),
+            Mood.Moderate => (ModerateBigScale, ModerateSmallScale, ModerateRowUnits),
+            _ => (BigScale, SmallScale, RowUnits)
+        };
+        double Scale(int i) => keyword < 0 ? 1 : i == keyword ? bigScale : smallScale;
+        List<List<int>> rows = Rows(words, Scale, keyword < 0 ? PlainRowUnits : rowUnits);
+        double size = FontSizeFor(words, rows, Scale);
+        int variant = text.Sum(letter => letter);
+        HorizontalAlignment align = keyword < 0 || mood == Mood.Calm ? HorizontalAlignment.Center : (variant % (mood == Mood.Lively ? 3 : 2)) switch
+        {
+            0 => HorizontalAlignment.Center,
+            1 => HorizontalAlignment.Left,
+            _ => HorizontalAlignment.Right
+        };
+        Color plain = ((SolidColorBrush)FindResource("LyricsStageText")).Color;
+        double gap = size * 0.1;
+
+        // Kelimeler satırın süresinin ilk yarısına yayılır (sakinde biraz daha uzun ve aralar geniş); çarpma hepsi birden.
+        double stagger = entrance == Entrance.Slam ? 0 : mood == Mood.Calm
+            ? Math.Min(CalmStaggerMs, view.LineLength.TotalMilliseconds * 0.55 / Math.Max(1, words.Count))
+            : Math.Min(MaxStaggerMs, view.LineLength.TotalMilliseconds * 0.5 / Math.Max(1, words.Count));
+        var block = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        int order = 0;
+        foreach (List<int> row in rows)
+        {
+            var line = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align, Margin = new Thickness(0, 0, 0, size * 0.02) };
+            foreach (int i in row)
             {
-                var block1 = new TextBlock
+                var begin = TimeSpan.FromMilliseconds(LeaveMs * 0.85 + order++ * stagger);
+                var brush = new SolidColorBrush(plain);
+                bool big = i == keyword;
+                double wordSize = size * Scale(i);
+                Entrance own = big && words.Count > 1 && mood == Mood.Lively ? Entrance.Slam : entrance;
+                FontWeight weight = keyword < 0 ? mood == Mood.Calm ? FontWeights.SemiBold : FontWeights.Bold
+                    : big ? FontWeights.Bold : mood == Mood.Lively ? FontWeights.Light : FontWeights.Normal;
+                FrameworkElement element = CreateWord(words[i], wordSize, weight, brush, own, begin);
+                element.VerticalAlignment = VerticalAlignment.Bottom;
+                element.Margin = new Thickness(gap, 0, gap, -Descent * wordSize);
+                line.Children.Add(element);
+                if (big && tinted)
                 {
-                    Text = word,
-                    FontFamily = Display,
-                    FontSize = size,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)FindResource("LyricsStageText"),
-                    Margin = new Thickness(size * 0.13, 0, size * 0.13, 0),
-                    Opacity = 0,
-                    RenderTransform = new TranslateTransform()
-                };
-                line.Children.Add(block1);
-                words.Add(block1);
+                    // Vurgulu kelime yerine oturduktan sonra kapağın rengine döner.
+                    TimeSpan settled = begin + TimeSpan.FromMilliseconds(own switch
+                    {
+                        Entrance.Chars => words[i].Length * CharStaggerMs + WordMs,
+                        Entrance.Soft => SoftMs * 0.6,
+                        _ => WordMs * 0.6
+                    });
+                    if (SystemParameters.ClientAreaAnimation)
+                    {
+                        var tint = TimeSpan.FromMilliseconds(mood == Mood.Calm ? 900 : 500);
+                        brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(view.Accent, tint) { BeginTime = settled });
+                    }
+                    else
+                    {
+                        brush.Color = view.Accent;
+                    }
+                }
             }
             block.Children.Add(line);
         }
         _poster.Children.Add(block);
         _block = block;
+        _blockVariant = variant;
+        _blockMood = mood;
+    }
 
-        // Kelimeler satırın süresinin ilk yarısına yayılır; uzun satırda çok beklemesin.
-        double stagger = Math.Min(MaxStaggerMs, length.TotalMilliseconds * 0.5 / Math.Max(1, words.Count));
+    /// <summary>Eski satır söner; yönü satıra göre değişir (yukarı, sola, aşağı ve biraz küçülerek).</summary>
+    private void Leave(StackPanel old, int variant, Mood mood)
+    {
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        var duration = TimeSpan.FromMilliseconds(mood == Mood.Calm ? CalmLeaveMs : LeaveMs);
+        if (mood == Mood.Calm)
+        {
+            variant = 0;
+        }
+        var move = new TranslateTransform();
+        var shrink = new ScaleTransform(1, 1);
+        old.RenderTransformOrigin = new Point(0.5, 0.5);
+        old.RenderTransform = new TransformGroup { Children = { shrink, move } };
+        switch (variant % 3)
+        {
+            case 1:
+                move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, -60, duration) { EasingFunction = ease });
+                break;
+            case 2:
+                move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, 30, duration) { EasingFunction = ease });
+                shrink.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 0.96, duration) { EasingFunction = ease });
+                shrink.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 0.96, duration) { EasingFunction = ease });
+                break;
+            default:
+                move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, mood == Mood.Calm ? -18 : -46, duration) { EasingFunction = ease });
+                break;
+        }
+        var fade = new DoubleAnimation(1, 0, duration) { EasingFunction = ease };
+        fade.Completed += (_, _) => _poster.Children.Remove(old);
+        old.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>Sakinde hep yavaş netleşme; ortada çarpma yalnızca tek kelimede, öteki satırlar netleşir ya da süzülür.</summary>
+    private static Entrance EntranceFor(string text, int words, TimeSpan length, Mood mood)
+    {
+        if (mood == Mood.Calm)
+        {
+            return Entrance.Soft;
+        }
+        if (mood == Mood.Moderate)
+        {
+            return words <= 1 ? Entrance.Slam : text.Length % 2 == 0 ? Entrance.Rise : Entrance.Drift;
+        }
+        if (words <= 1)
+        {
+            return Entrance.Slam;
+        }
+
+        double perWord = length.TotalSeconds / words;
+        if (perWord < FastWordSeconds)
+        {
+            return Entrance.Mask;
+        }
+        if (perWord > SlowWordSeconds)
+        {
+            return Entrance.Chars;
+        }
+        return (text.Length % 4) switch
+        {
+            1 => Entrance.Mask,
+            3 => Entrance.Drift,
+            _ => Entrance.Rise
+        };
+    }
+
+    /// <summary>
+    /// Vurgulu kelime (satırda bir; LRCLIB'de vurgu bilgisi yok): küçük ve sık kelimeler dışında, uzunluk + şarkıda başka
+    /// satırda da geçiyorsa (nakarat) 4 + satır sonundaysa (çoğu zaman kafiye) 2. Büyük yazılır; puanı eşiği geçerse
+    /// renklenir de (her satır renklenmesin: "bazı kelimeler"). Aday yoksa -1.
+    /// </summary>
+    private (int Index, bool Tinted) KeywordOf(List<string> words, IReadOnlyList<LyricLine> lines, Mood mood)
+    {
+        if (!ReferenceEquals(lines, _songWordsOf))
+        {
+            _songWordsOf = lines;
+            _songWords.Clear();
+            foreach (LyricLine line in lines)
+            {
+                foreach (string word in line.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(Bare).Distinct())
+                {
+                    _songWords[word] = _songWords.GetValueOrDefault(word) + 1;
+                }
+            }
+        }
+
+        int best = -1;
+        int bestScore = 0;
+        bool bestRepeats = false;
         for (int i = 0; i < words.Count; i++)
         {
-            Reveal(words[i], size, TimeSpan.FromMilliseconds(LeaveMs * 0.85 + i * stagger));
+            string bare = Bare(words[i]);
+            if (bare.Length < 4 || SmallWords.Contains(bare))
+            {
+                continue;
+            }
+
+            bool repeats = _songWords.GetValueOrDefault(bare) > 1;
+            int score = bare.Length + (repeats ? 4 : 0) + (i == words.Count - 1 ? 2 : 0);
+            if (score > bestScore)
+            {
+                best = i;
+                bestScore = score;
+                bestRepeats = repeats;
+            }
+        }
+
+        // Sakin şarkıda renk yalnızca nakarat kelimesinde (kullanıcı: yavaş şarkıda gereksiz vurgu).
+        return (best, bestScore >= KeywordMinScore && (mood != Mood.Calm || bestRepeats));
+    }
+
+    private static readonly System.Globalization.CultureInfo Turkish = new("tr-TR");
+
+    private static string Bare(string word)
+    {
+        return new string(word.ToLower(Turkish).Where(char.IsLetter).ToArray());
+    }
+
+    private FrameworkElement CreateWord(string word, double size, FontWeight weight, Brush brush, Entrance entrance, TimeSpan begin)
+    {
+        bool animate = SystemParameters.ClientAreaAnimation;
+        TextBlock Glyphs(string text) => new()
+        {
+            Text = text,
+            FontFamily = Display,
+            FontSize = size,
+            FontWeight = weight,
+            Foreground = brush
+        };
+
+        switch (entrance)
+        {
+            case Entrance.Chars:
+            {
+                var letters = new StackPanel { Orientation = Orientation.Horizontal };
+                System.Globalization.TextElementEnumerator parts = System.Globalization.StringInfo.GetTextElementEnumerator(word);
+                int i = 0;
+                while (parts.MoveNext())
+                {
+                    TextBlock letter = Glyphs(parts.GetTextElement());
+                    letters.Children.Add(letter);
+                    Rise(letter, size, begin + TimeSpan.FromMilliseconds(i++ * CharStaggerMs), blur: false);
+                }
+                return letters;
+            }
+            case Entrance.Mask:
+            {
+                // Kelime kendi kutusunun altından çıkar; kutu keser.
+                TextBlock text = Glyphs(word);
+                var slide = new TranslateTransform(0, animate ? size * 1.4 : 0);
+                text.RenderTransform = slide;
+                if (animate)
+                {
+                    slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(size * 1.4, 0, TimeSpan.FromMilliseconds(460))
+                    {
+                        BeginTime = begin,
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    });
+                }
+                return new Border { ClipToBounds = true, Child = text };
+            }
+            case Entrance.Slam:
+            {
+                TextBlock text = Glyphs(word);
+                if (!animate)
+                {
+                    return text;
+                }
+
+                var scale = new ScaleTransform(1.9, 1.9);
+                text.RenderTransform = scale;
+                text.RenderTransformOrigin = new Point(0.5, 0.5);
+                text.Opacity = 0;
+                var grow = new DoubleAnimationUsingKeyFrames { BeginTime = begin, Duration = TimeSpan.FromMilliseconds(380) };
+                grow.KeyFrames.Add(new EasingDoubleKeyFrame(0.96, KeyTime.FromPercent(0.7), new CubicEase { EasingMode = EasingMode.EaseOut }));
+                grow.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromPercent(1)));
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+                text.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { BeginTime = begin });
+                return text;
+            }
+            case Entrance.Drift:
+            {
+                TextBlock text = Glyphs(word);
+                if (!animate)
+                {
+                    return text;
+                }
+
+                var move = new TranslateTransform(-size * 0.5, 0);
+                text.RenderTransform = move;
+                text.Opacity = 0;
+                var duration = TimeSpan.FromMilliseconds(520);
+                move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-size * 0.5, 0, duration) { BeginTime = begin, EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+                text.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { BeginTime = begin });
+                return text;
+            }
+            case Entrance.Soft:
+            {
+                TextBlock text = Glyphs(word);
+                Rise(text, size, begin, blur: true, soft: true);
+                return text;
+            }
+            default:
+            {
+                TextBlock text = Glyphs(word);
+                Rise(text, size, begin, blur: true);
+                return text;
+            }
         }
     }
 
-    private static void Reveal(TextBlock word, double size, TimeSpan begin)
+    /// <summary>Bulanıktan netleşip yukarı oturur (harf harf girişte bulanıklık yok: harf başına efekt pahalı).</summary>
+    /// <param name="soft">Sakin şarkıda: daha uzun, daha az yol ve bulanıklık.</param>
+    private static void Rise(TextBlock word, double size, TimeSpan begin, bool blur, bool soft = false)
     {
         if (!SystemParameters.ClientAreaAnimation)
         {
-            word.Opacity = 1;
             return;
         }
 
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var duration = TimeSpan.FromMilliseconds(WordMs);
-        var blur = new BlurEffect { Radius = size * 0.18, RenderingBias = RenderingBias.Performance };
-        word.Effect = blur;
-        ((TranslateTransform)word.RenderTransform).BeginAnimation(TranslateTransform.YProperty,
-            new DoubleAnimation(size * 0.28, 0, duration) { BeginTime = begin, EasingFunction = ease });
+        IEasingFunction ease = soft ? new SineEase { EasingMode = EasingMode.EaseOut } : new CubicEase { EasingMode = EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(soft ? SoftMs : WordMs);
+        var move = new TranslateTransform();
+        word.RenderTransform = move;
+        word.Opacity = 0;
+        move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(size * (soft ? 0.12 : 0.28), 0, duration) { BeginTime = begin, EasingFunction = ease });
         word.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { BeginTime = begin });
-        var sharpen = new DoubleAnimation(blur.Radius, 0, duration) { BeginTime = begin, EasingFunction = ease };
+        if (!blur)
+        {
+            return;
+        }
+
+        var effect = new BlurEffect { Radius = size * (soft ? 0.1 : 0.18), RenderingBias = RenderingBias.Performance };
+        word.Effect = effect;
+        var sharpen = new DoubleAnimation(effect.Radius, 0, duration) { BeginTime = begin, EasingFunction = ease };
         // Bitince efekt kalkar: yazı yeniden keskin ve ucuz çizilsin.
         sharpen.Completed += (_, _) => word.Effect = null;
-        blur.BeginAnimation(BlurEffect.RadiusProperty, sharpen);
+        effect.BeginAnimation(BlurEffect.RadiusProperty, sharpen);
     }
 
-    /// <summary>Kelimeler kısa satırlara (en çok ~11 harf) toplanır: poster gibi alt alta.</summary>
-    private static List<List<string>> Rows(string text)
+    /// <summary>Kelimeler kısa satırlara toplanır (genişlik harf × boy biriminde): poster gibi alt alta.</summary>
+    private static List<List<int>> Rows(List<string> words, Func<int, double> scale, double limit)
     {
-        var rows = new List<List<string>>();
-        var row = new List<string>();
-        int length = 0;
-        foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        var rows = new List<List<int>>();
+        var row = new List<int>();
+        double units = 0;
+        for (int i = 0; i < words.Count; i++)
         {
-            if (row.Count > 0 && length + 1 + word.Length > RowChars)
+            double width = words[i].Length * scale(i);
+            if (row.Count > 0 && units + GapUnits + width > limit)
             {
                 rows.Add(row);
                 row = [];
-                length = 0;
+                units = 0;
             }
-            row.Add(word);
-            length += (length > 0 ? 1 : 0) + word.Length;
+            units += (row.Count > 0 ? GapUnits : 0) + width;
+            row.Add(i);
         }
         if (row.Count > 0)
         {
@@ -1016,18 +1467,20 @@ internal sealed class LyricsStage : Window
         return rows;
     }
 
-    /// <summary>En uzun satır ekranın genişliğine, satırların toplamı yüksekliğine sığacak boy.</summary>
-    private double FontSizeFor(List<List<string>> rows)
+    /// <summary>
+    /// Temel boy: en geniş satır ekranın genişliğine, satırların toplamı yüksekliğine sığsın; en büyük kelime ekranın
+    /// %16'sını geçmesin. Üstte çerçeve, altta sıradaki satır ve şarkı için yer kalır.
+    /// </summary>
+    private double FontSizeFor(List<string> words, List<List<int>> rows, Func<int, double> scale)
     {
         double width = Math.Max(400, ActualWidth);
         double height = Math.Max(300, ActualHeight);
-        int longest = rows.Max(row => row.Sum(word => word.Length) + row.Count - 1);
-        double byWidth = width * 0.74 / (Math.Max(4, longest) * 0.58);
-
-        // Bir satırın gerçek yüksekliği yazı boyunun ~1,33 katı, kenar payları çıkınca ~1,17; üstte çerçeve, altta
-        // sıradaki satır ve şarkı için yer kalsın (uzun satırda poster sıradakinin üstüne biniyordu).
-        double byHeight = (height - PosterReserve) / (rows.Count * 1.17);
-        return Math.Min(height * 0.16, Math.Min(byWidth, byHeight));
+        double widest = rows.Max(row => row.Sum(i => words[i].Length * scale(i)) + (row.Count - 1) * GapUnits);
+        double byWidth = width * 0.78 / (Math.Max(4, widest) * 0.58);
+        double tall = rows.Sum(row => row.Max(scale) * 1.17);
+        double byHeight = (height - PosterReserve) / tall;
+        double largest = rows.Max(row => row.Max(scale));
+        return Math.Min(height * 0.16 / largest, Math.Min(byWidth, byHeight));
     }
 
     private static void Fade(UIElement element, double to, int ms)
