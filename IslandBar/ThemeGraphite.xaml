@@ -34,6 +34,7 @@
     <SolidColorBrush x:Key="LyricsStageButton" Color="#1CFFFFFF" />
     <SolidColorBrush x:Key="LyricsStageButtonHover" Color="#30FFFFFF" />
     <SolidColorBrush x:Key="LyricsStageMap" Color="#29FFFFFF" />
+    <SolidColorBrush x:Key="LyricsStageShade" Color="#BF07070A" />
     <SolidColorBrush x:Key="OnAccentHover" Color="#14000000" />
     <SolidColorBrush x:Key="OnAccentDivider" Color="#26000000" />
     <SolidColorBrush x:Key="FolderGradient" Color="#F2A93B" />

@@ -49,7 +49,7 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   altyazı şeridi (`LyricsBand`); ikinci ekran varsa bir kez sorulur, evetse orada tam ekran Poster (`LyricsStage`).
   Sahnede kontroller (B · Söz haritası): satırlara bölünmüş ilerleme çizgisi, tıklayınca o satıra; önceki / oynat /
   sonraki, klavye; Windows'un medya denetimiyle. Çubuk kapalı durur, imleç alta gelince kayarak açılır; ekolayzırın alt
-  kısmı o sırada silinir.
+  kısmı o sırada silinir. Arka planda kapağın bulanık ve karartılmış hali.
   Spotify'ın kendi söz ucu kullanılmaz (oturum anahtarı ister).
 - Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
   (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni

@@ -28,7 +28,8 @@ internal sealed record LyricsView(string Key, string Text, string Next, TimeSpan
 internal sealed record LyricsCommands(Action PlayPause, Action Previous, Action Next, Action<TimeSpan> Seek, Action Close);
 
 /// <summary>
-/// İkinci ekranda tam ekran sözler (kullanıcının tasarımı, seçeneklerden C · Poster): ekran kararır, kenarda ince
+/// İkinci ekranda tam ekran sözler (kullanıcının tasarımı, seçeneklerden C · Poster): arka planda kapağın karartılmış ve
+/// bulanık hali (kapak yoksa düz koyu; kullanıcının isteği, ilk sürümde düz siyahtı), kenarda ince
 /// çerçeve ve onun üstünde iki karşılıklı parça kovalar (rengi kapaktan; gradyan ve parıltı yok). Satır kelimelere
 /// bölünür, kısa satırlar halinde büyük ve alt alta dizilir; kelimeler sırayla bulanıktan netleşip yukarı oturur
 /// (lyric klip gibi). Altta soluk sıradaki satır, sol altta kapak ve şarkı. Fare kıpırdayınca sağ üstte Kapat çıkar,
@@ -82,6 +83,13 @@ internal sealed class LyricsStage : Window
 
     private readonly System.Drawing.Rectangle _bounds;
     private readonly Grid _root = new();
+    private readonly Grid _backdrop = new() { IsHitTestVisible = false };
+    private BitmapSource? _backdropCover;
+
+    /// <summary>Kapak küçük (120 px) gelir: küçük bir resme bulanık çizilip ekrana büyütülür, pikseller görünmez.</summary>
+    private const int BackdropWidth = 192;
+    private const double BackdropBlur = 9;
+    private const int BackdropFadeMs = 900;
     private readonly Canvas _frame = new();
     private readonly Rectangle _chasers;
     private readonly Rectangle _edge;
@@ -285,6 +293,8 @@ internal sealed class LyricsStage : Window
         };
         _close.MouseLeftButtonUp += (_, _) => _commands.Close();
 
+        _root.Children.Add(_backdrop);
+        _root.Children.Add(new Rectangle { Fill = (Brush)FindResource("LyricsStageShade"), IsHitTestVisible = false });
         _root.Children.Add(_frame);
         _root.Children.Add(_poster);
         _root.Children.Add(_next);
@@ -495,6 +505,10 @@ internal sealed class LyricsStage : Window
         UpdateControls(view);
 
         _coverImage.ImageSource = view.Cover;
+        if (!ReferenceEquals(view.Cover, _backdropCover))
+        {
+            SetBackdrop(view.Cover);
+        }
         _cover.Visibility = view.Cover == null ? Visibility.Collapsed : Visibility.Visible;
         _title.Text = view.Title;
         _artist.Text = view.Artist;
@@ -514,6 +528,55 @@ internal sealed class LyricsStage : Window
 
         _key = view.Key;
         ShowLine(view.Text, view.LineLength);
+    }
+
+    /// <summary>Şarkı değişince yeni kapak eskisinin üstünde belirir (arka plan; geçişte kesinti olmasın), eskisi sonra kalkar.</summary>
+    private void SetBackdrop(BitmapSource? cover)
+    {
+        _backdropCover = cover;
+        var duration = TimeSpan.FromMilliseconds(SystemParameters.ClientAreaAnimation ? BackdropFadeMs : 0);
+        List<Image> old = _backdrop.Children.OfType<Image>().ToList();
+        foreach (Image image in old)
+        {
+            var leave = new DoubleAnimation(0, duration);
+            leave.Completed += (_, _) => _backdrop.Children.Remove(image);
+            image.BeginAnimation(OpacityProperty, leave);
+        }
+
+        if (cover == null)
+        {
+            return;
+        }
+
+        var shown = new Image { Source = Blurred(cover), Stretch = Stretch.UniformToFill, Opacity = 0 };
+        RenderOptions.SetBitmapScalingMode(shown, BitmapScalingMode.HighQuality);
+        _backdrop.Children.Add(shown);
+        shown.BeginAnimation(OpacityProperty, new DoubleAnimation(1, duration));
+    }
+
+    /// <summary>Kapağın ekran oranında kırpılmış, bulanık küçük hali; kenarları saydamlaşmasın diye taşarak çizilir.</summary>
+    private BitmapSource Blurred(BitmapSource cover)
+    {
+        double ratio = ActualWidth > 0 && ActualHeight > 0 ? ActualHeight / ActualWidth : 9.0 / 16;
+        int width = BackdropWidth;
+        int height = Math.Max(1, (int)Math.Round(width * ratio));
+        double spill = BackdropBlur * 4;
+        var picture = new Rectangle
+        {
+            Width = width + 2 * spill,
+            Height = height + 2 * spill,
+            Fill = new ImageBrush(cover) { Stretch = Stretch.UniformToFill },
+            Effect = new BlurEffect { Radius = BackdropBlur, KernelType = KernelType.Gaussian }
+        };
+        Canvas.SetLeft(picture, -spill);
+        Canvas.SetTop(picture, -spill);
+        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, Children = { picture } };
+        canvas.Measure(new Size(width, height));
+        canvas.Arrange(new Rect(0, 0, width, height));
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(canvas);
+        bitmap.Freeze();
+        return bitmap;
     }
 
     /// <summary>Bir satırın haritadaki parçası: başı, sonu, sözü (null: sözsüz şarkıda tek parça).</summary>
