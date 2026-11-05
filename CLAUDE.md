@@ -47,6 +47,9 @@ Bu dosya her oturumda yüklenir; kısa tutulur. Ölçümler, denemeler, "neden b
   ucu istek engelliyor; tarayıcı gibi görünüp engeli aşma.
 - Sözler: tekerlekteki kip (`LyricsMode`), Spotify'da çalan şarkının zamanlı sözleri LRCLIB'den, şarkı kartının yerinde
   altyazı şeridi (`LyricsBand`); ikinci ekran varsa bir kez sorulur, evetse orada tam ekran Poster (`LyricsStage`).
+  Sahnede kontroller (B · Söz haritası): satırlara bölünmüş ilerleme çizgisi, tıklayınca o satıra; önceki / oynat /
+  sonraki, klavye; Windows'un medya denetimiyle. Çubuk kapalı durur, imleç alta gelince kayarak açılır; ekolayzırın alt
+  kısmı o sırada silinir.
   Spotify'ın kendi söz ucu kullanılmaz (oturum anahtarı ister).
 - Dönüştür: tekerlekteki araç, adanın üstünde kare kutu (`ConvertCard`, seçilen tasarım C · Çekmece): dosyalar bırakılır
   (kopya gibi, kullanıcının dosyasına dokunulmaz), işlem seçilince kutu çubuğa kayar, ön yüzünde ilerleme, bitince yeni

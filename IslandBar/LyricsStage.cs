@@ -12,9 +12,20 @@ using System.Windows.Threading;
 
 namespace IslandBar;
 
-/// <summary>Sahnenin o anki hali: satır (anahtarı değişince yeni satır gelir) ve şarkı.</summary>
+/// <summary>Sahnenin o anki hali: satır (anahtarı değişince yeni satır gelir), şarkı ve konum.</summary>
 internal sealed record LyricsView(string Key, string Text, string Next, TimeSpan LineLength, string Title, string Artist,
-    BitmapSource? Cover, Color Accent, string? Note, bool Playing);
+    BitmapSource? Cover, Color Accent, string? Note, bool Playing)
+{
+    /// <summary>Şarkının anahtarı; boşsa çalan yok (harita ve düğmeler gizli).</summary>
+    public string Song { get; init; } = "";
+    public TimeSpan Position { get; init; }
+    public TimeSpan Duration { get; init; }
+    public IReadOnlyList<LyricLine> Lines { get; init; } = [];
+    public bool CanSeek { get; init; }
+}
+
+/// <summary>Sahnenin düğmeleri: Spotify'a Windows'un medya denetimiyle gider.</summary>
+internal sealed record LyricsCommands(Action PlayPause, Action Previous, Action Next, Action<TimeSpan> Seek, Action Close);
 
 /// <summary>
 /// İkinci ekranda tam ekran sözler (kullanıcının tasarımı, seçeneklerden C · Poster): ekran kararır, kenarda ince
@@ -22,6 +33,11 @@ internal sealed record LyricsView(string Key, string Text, string Next, TimeSpan
 /// bölünür, kısa satırlar halinde büyük ve alt alta dizilir; kelimeler sırayla bulanıktan netleşip yukarı oturur
 /// (lyric klip gibi). Altta soluk sıradaki satır, sol altta kapak ve şarkı. Fare kıpırdayınca sağ üstte Kapat çıkar,
 /// durunca imleç de gizlenir. Kelime zamanları LRCLIB'de yok: kelimeler satırın süresine yayılır.
+/// Kontroller (seçeneklerden B · Söz haritası): en altta satırlara bölünmüş ilerleme çizgisi (sözsüz yerler boşluk); bir
+/// parçanın üstünde o satırın sözü çıkar, tıklayınca şarkı oraya gider. Şarkının yanında önceki / oynat / sonraki,
+/// sağda süre. Bu çubuk kapalı durur (solda yalnızca kapak ve şarkı); imleç alt kenara ya da şarkının üstüne gelince
+/// alttan kayarak açılır, şarkı yukarı yer açar (kullanıcının tasarımı). Çerçevesi çubuğun üstüne binen ekolayzırda
+/// açılınca çerçevenin alt kısmı aşağı doğru silinir. Klavye: Boşluk, ← / → 5 sn (çubuğu da açar), Esc.
 /// </summary>
 internal sealed class LyricsStage : Window
 {
@@ -36,7 +52,29 @@ internal sealed class LyricsStage : Window
     private const int MaxStaggerMs = 300;
     private const int LeaveMs = 300;
     private const int IdleMs = 2500;
-    private const double PosterReserve = 360;
+    private const double PosterReserve = 390;
+    private const double SideMargin = 48;
+    private const double MapLine = 6;
+    private const double MapGap = 4;
+    private const double MapBottom = 34;
+    private const double MapHit = 26;
+    private const double MapClosedScale = 0.3;
+    private const double SongBottom = 44;
+    private const double BarSlide = 16;
+
+    /// <summary>Çubuk imleç alttan bu kadar yakındayken açılır; bunun dışına çıkınca kapanır (arada titremesin).</summary>
+    private const double RevealZone = 150;
+    private const double KeepZone = 200;
+
+    /// <summary>Çubuk açıkken ekolayzırın silindiği yer: alttan bu yükseklikte tam, bunun altında yok.</summary>
+    private const double EffectFadeTop = 210;
+    private const double EffectFadeBottom = 120;
+    private const double ButtonSize = 44;
+    private const double SeekStepSeconds = 5;
+
+    /// <summary>Satıra gidince biraz önceden başlasın: ilk hece kaçmasın.</summary>
+    private static readonly TimeSpan LineLeadIn = TimeSpan.FromMilliseconds(300);
+    private static readonly FontFamily Icons = new("Segoe Fluent Icons, Segoe MDL2 Assets");
     private const uint NoZOrder = 0x0004;
     private const uint NoActivate = 0x0010;
 
@@ -57,6 +95,28 @@ internal sealed class LyricsStage : Window
     private readonly Border _close;
     private readonly DispatcherTimer _idle;
     private readonly SolidColorBrush _accent = new(Colors.White);
+    private readonly SolidColorBrush _accentPast = new(Colors.White) { Opacity = 0.45 };
+    private readonly LyricsCommands _commands;
+    private readonly Grid _mapHost = new();
+    private readonly Canvas _map = new();
+    private readonly ScaleTransform _mapScale = new(1, MapClosedScale);
+    private readonly TranslateTransform _songLift = new();
+    private readonly TranslateTransform _buttonsSlide = new(0, BarSlide);
+    private readonly TranslateTransform _timeSlide = new(0, BarSlide);
+    private readonly TranslateTransform _mapSlide = new(0, BarSlide);
+    private GradientStop _fadeMiddle = new(Colors.Black, 0);
+    private GradientStop _fadeEnd = new(Colors.Black, 1);
+    private bool _barOpen;
+    private readonly Rectangle _head;
+    private readonly Border _tip;
+    private readonly TextBlock _tipText;
+    private readonly TextBlock _time;
+    private readonly StackPanel _buttons;
+    private readonly TextBlock _playGlyph;
+    private readonly List<MapPart> _mapParts = [];
+    private string _mapKey = "";
+    private LyricsView? _view;
+    private bool _active;
     private string _key = "";
     private StackPanel? _block;
     private bool _playing = true;
@@ -88,9 +148,10 @@ internal sealed class LyricsStage : Window
 
     /// <param name="bounds">Ekranın tamamı, piksel.</param>
     /// <param name="frameStyle"><see cref="FrameChasers"/>, <see cref="FrameEqualizer"/> ya da <see cref="FrameMarquee"/>.</param>
-    public LyricsStage(System.Drawing.Rectangle bounds, int frameStyle, Action close)
+    public LyricsStage(System.Drawing.Rectangle bounds, int frameStyle, LyricsCommands commands)
     {
         _bounds = bounds;
+        _commands = commands;
         _frameStyle = frameStyle;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -109,13 +170,13 @@ internal sealed class LyricsStage : Window
         // Poster ortanın biraz üstünde: altta sıradaki satır ve şarkı var.
         _poster.HorizontalAlignment = HorizontalAlignment.Center;
         _poster.VerticalAlignment = VerticalAlignment.Center;
-        _poster.Margin = new Thickness(0, 0, 0, 90);
+        _poster.Margin = new Thickness(0, 0, 0, 118);
 
         _next = new TextBlock
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, 92),
+            Margin = new Thickness(0, 0, 0, 120),
             FontSize = 22,
             Foreground = (Brush)FindResource("LyricsStageDim"),
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -124,7 +185,7 @@ internal sealed class LyricsStage : Window
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, 92),
+            Margin = new Thickness(0, 0, 0, 120),
             FontSize = 20,
             Foreground = (Brush)FindResource("LyricsStageMuted")
         };
@@ -132,14 +193,83 @@ internal sealed class LyricsStage : Window
         _cover = new Border { Width = 46, Height = 46, CornerRadius = new CornerRadius(8), Background = _coverImage };
         _title = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("LyricsStageText"), TextTrimming = TextTrimming.CharacterEllipsis };
         _artist = new TextBlock { FontSize = 13.5, Foreground = (Brush)FindResource("LyricsStageMuted"), TextTrimming = TextTrimming.CharacterEllipsis };
+        _playGlyph = new TextBlock();
+        _buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 0, 0),
+            Opacity = 0,
+            IsHitTestVisible = false,
+            RenderTransform = _buttonsSlide,
+            Children =
+            {
+                CreateButton(new TextBlock { Text = "\uE892" }, 18, false, () => _commands.Previous()),
+                CreateButton(_playGlyph, 20, true, () => _commands.PlayPause()),
+                CreateButton(new TextBlock { Text = "\uE893" }, 18, false, () => _commands.Next())
+            }
+        };
         var song = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(48, 0, 0, 44),
-            Children = { _cover, new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, MaxWidth = 420, Children = { _title, _artist } } }
+            Margin = new Thickness(SideMargin, 0, 0, SongBottom),
+            RenderTransform = _songLift,
+            Children =
+            {
+                _cover,
+                new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, MinWidth = 220, MaxWidth = 420, Children = { _title, _artist } },
+                _buttons
+            }
         };
+
+        _time = new TextBlock
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, SideMargin, 62),
+            FontSize = 15,
+            Foreground = (Brush)FindResource("LyricsStageMuted"),
+            Opacity = 0,
+            RenderTransform = _timeSlide
+        };
+
+        // Harita: satır başına bir parça. Tutulacak yer çizgiden geniş (ince çizgiye isabet zor).
+        _head = new Rectangle { Width = 3, Height = 18, RadiusX = 1.5, RadiusY = 1.5, Fill = (Brush)FindResource("LyricsStageText"), IsHitTestVisible = false };
+        _map.Height = MapLine;
+        _map.VerticalAlignment = VerticalAlignment.Center;
+        _map.RenderTransform = _mapScale;
+        _map.RenderTransformOrigin = new Point(0.5, 0.5);
+        _map.IsHitTestVisible = false;
+        _map.SizeChanged += (_, _) => LayoutMap();
+        var headLayer = new Canvas { Height = 0, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, Children = { _head } };
+        Canvas.SetTop(_head, -_head.Height / 2);
+        _mapHost.Height = MapHit;
+        _mapHost.VerticalAlignment = VerticalAlignment.Bottom;
+        _mapHost.Margin = new Thickness(SideMargin, 0, SideMargin, MapBottom - (MapHit - MapLine) / 2);
+        _mapHost.Background = Brushes.Transparent;
+        _mapHost.Opacity = 0;
+        _mapHost.IsHitTestVisible = false;
+        _mapHost.RenderTransform = _mapSlide;
+        _mapHost.Children.Add(_map);
+        _mapHost.Children.Add(headLayer);
+        _mapHost.MouseMove += MapHost_MouseMove;
+        _mapHost.MouseLeftButtonDown += MapHost_MouseLeftButtonDown;
+
+        _tipText = new TextBlock { FontSize = 17, Foreground = (Brush)FindResource("LyricsStageText") };
+        _tip = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Padding = new Thickness(14, 8, 14, 9),
+            CornerRadius = new CornerRadius(10),
+            Background = (Brush)FindResource("LyricsStageButton"),
+            Opacity = 0,
+            IsHitTestVisible = false,
+            Child = _tipText
+        };
+        _mapHost.MouseLeave += (_, _) => Fade(_tip, 0, 120);
 
         _close = new Border
         {
@@ -153,13 +283,16 @@ internal sealed class LyricsStage : Window
             Opacity = 0,
             Child = new TextBlock { Text = "Sözleri kapat", FontSize = 13, Foreground = (Brush)FindResource("LyricsStageText") }
         };
-        _close.MouseLeftButtonUp += (_, _) => close();
+        _close.MouseLeftButtonUp += (_, _) => _commands.Close();
 
         _root.Children.Add(_frame);
         _root.Children.Add(_poster);
         _root.Children.Add(_next);
         _root.Children.Add(_note);
         _root.Children.Add(song);
+        _root.Children.Add(_time);
+        _root.Children.Add(_mapHost);
+        _root.Children.Add(_tip);
         _root.Children.Add(_close);
         Content = _root;
 
@@ -167,17 +300,173 @@ internal sealed class LyricsStage : Window
         _idle.Tick += (_, _) =>
         {
             _idle.Stop();
-            Fade(_close, 0, 300);
-            Cursor = Cursors.None;
+
+            // İmleç çubuğun üstünde duruyorsa (balonu okuyor) açık kalır.
+            if (InRevealZone(Mouse.GetPosition(this).Y, KeepZone) && IsMouseOver)
+            {
+                return;
+            }
+            SetActive(false);
+            SetBarOpen(false);
         };
-        MouseMove += (_, _) =>
+        MouseMove += (_, e) =>
         {
-            Cursor = null;
-            Fade(_close, 1, 150);
+            SetActive(true);
             _idle.Stop();
             _idle.Start();
+            double y = e.GetPosition(this).Y;
+            if (InRevealZone(y, RevealZone))
+            {
+                SetBarOpen(true);
+            }
+            else if (!InRevealZone(y, KeepZone))
+            {
+                SetBarOpen(false);
+            }
         };
+        MouseLeave += (_, _) => SetBarOpen(false);
+        KeyDown += Stage_KeyDown;
         Cursor = Cursors.None;
+    }
+
+    private Border CreateButton(TextBlock glyph, double size, bool filled, Action click)
+    {
+        glyph.FontFamily = Icons;
+        glyph.FontSize = size;
+        glyph.Foreground = (Brush)FindResource("LyricsStageText");
+        glyph.HorizontalAlignment = HorizontalAlignment.Center;
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        Brush rest = filled ? (Brush)FindResource("LyricsStageButton") : Brushes.Transparent;
+        var button = new Border
+        {
+            Width = ButtonSize,
+            Height = ButtonSize,
+            Margin = new Thickness(3, 0, 3, 0),
+            CornerRadius = new CornerRadius(12),
+            Background = rest,
+            Cursor = Cursors.Hand,
+            Child = glyph
+        };
+        button.MouseEnter += (_, _) => button.Background = (Brush)FindResource("LyricsStageButtonHover");
+        button.MouseLeave += (_, _) => button.Background = rest;
+        button.MouseLeftButtonUp += (_, _) => click();
+        return button;
+    }
+
+    /// <summary>Fare kıpırdadı (true) ya da durdu: Kapat ve imleç.</summary>
+    private void SetActive(bool active)
+    {
+        if (active == _active)
+        {
+            return;
+        }
+
+        _active = active;
+        Cursor = active ? null : Cursors.None;
+        Fade(_close, active ? 1 : 0, active ? 150 : 300);
+    }
+
+    private bool InRevealZone(double y, double zone)
+    {
+        return ActualHeight > 0 && y >= ActualHeight - zone;
+    }
+
+    /// <summary>
+    /// Zaman çubuğu: düğmeler, süre ve harita alttan kayarak gelir, harita incelikten kalınlaşır, şarkı yukarı yer açar.
+    /// Kayma, solma değil (kullanıcının tercihi); solma yalnızca kaymaya eşlik eder.
+    /// </summary>
+    private void SetBarOpen(bool open)
+    {
+        if (open == _barOpen)
+        {
+            return;
+        }
+
+        _barOpen = open;
+        bool animate = SystemParameters.ClientAreaAnimation;
+        var duration = TimeSpan.FromMilliseconds(animate ? open ? 280 : 200 : 0);
+        IEasingFunction ease = new CubicEase { EasingMode = open ? EasingMode.EaseOut : EasingMode.EaseIn };
+        foreach ((UIElement part, TranslateTransform slide) in new[] { ((UIElement)_buttons, _buttonsSlide), (_time, _timeSlide), (_mapHost, _mapSlide) })
+        {
+            part.IsHitTestVisible = open;
+            part.BeginAnimation(OpacityProperty, new DoubleAnimation(open ? 1 : 0, duration) { EasingFunction = ease });
+            slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(open ? 0 : BarSlide, duration) { EasingFunction = ease });
+        }
+        _mapScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(open ? 1 : MapClosedScale, duration) { EasingFunction = ease });
+        _songLift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(open ? SongBottom - 62 : 0, duration) { EasingFunction = ease });
+        if (!open)
+        {
+            Fade(_tip, 0, 120);
+        }
+        FadeEffectEdge(duration);
+    }
+
+    /// <summary>
+    /// Ekolayzırın çubukları zaman çubuğunun üstüne biniyor: çubuk açıkken çerçevenin alt kısmı opaklık maskesiyle aşağı
+    /// doğru silinir (renk değil, yalnızca görünürlük). Kapanınca geri gelir, maske bitince kalkar (tam ekran maske ucuz değil).
+    /// </summary>
+    private void FadeEffectEdge(TimeSpan duration)
+    {
+        bool fade = _barOpen && _frameStyle == FrameEqualizer;
+        if (fade && _frame.OpacityMask == null)
+        {
+            double height = Math.Max(1, _frame.ActualHeight);
+            _fadeMiddle = new GradientStop(Colors.Black, (height - EffectFadeBottom) / height);
+            _fadeEnd = new GradientStop(Colors.Black, 1);
+            _frame.OpacityMask = new LinearGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(0, height),
+                GradientStops = { new GradientStop(Colors.Black, 0), new GradientStop(Colors.Black, (height - EffectFadeTop) / height), _fadeMiddle, _fadeEnd }
+            };
+        }
+        if (_frame.OpacityMask == null)
+        {
+            return;
+        }
+
+        Color to = fade ? Colors.Transparent : Colors.Black;
+        var clear = new ColorAnimation(to, duration);
+        if (!fade)
+        {
+            clear.Completed += (_, _) =>
+            {
+                if (!_barOpen || _frameStyle != FrameEqualizer)
+                {
+                    _frame.OpacityMask = null;
+                }
+            };
+        }
+        _fadeMiddle.BeginAnimation(GradientStop.ColorProperty, clear);
+        _fadeEnd.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(to, duration));
+    }
+
+    private void Stage_KeyDown(object sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Space:
+                _commands.PlayPause();
+                break;
+            case Key.Left or Key.Right:
+                if (_view is { CanSeek: true } view)
+                {
+                    _commands.Seek(view.Position + TimeSpan.FromSeconds(e.Key == Key.Left ? -SeekStepSeconds : SeekStepSeconds));
+
+                    // Nereye gittiği görünsün; fare durunca kapanır.
+                    SetBarOpen(true);
+                    _idle.Stop();
+                    _idle.Start();
+                }
+                break;
+            case Key.Escape:
+                _commands.Close();
+                break;
+            default:
+                return;
+        }
+        e.Handled = true;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -199,7 +488,11 @@ internal sealed class LyricsStage : Window
         if (_accent.Color != view.Accent)
         {
             _accent.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(view.Accent, TimeSpan.FromMilliseconds(600)));
+            _accentPast.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(view.Accent, TimeSpan.FromMilliseconds(600)));
         }
+
+        _view = view;
+        UpdateControls(view);
 
         _coverImage.ImageSource = view.Cover;
         _cover.Visibility = view.Cover == null ? Visibility.Collapsed : Visibility.Visible;
@@ -223,6 +516,156 @@ internal sealed class LyricsStage : Window
         ShowLine(view.Text, view.LineLength);
     }
 
+    /// <summary>Bir satırın haritadaki parçası: başı, sonu, sözü (null: sözsüz şarkıda tek parça).</summary>
+    private sealed record MapPart(TimeSpan Start, TimeSpan End, string? Text, Border Back, Border Fill);
+
+    private void UpdateControls(LyricsView view)
+    {
+        bool song = view.Song.Length > 0;
+        _buttons.Visibility = song ? Visibility.Visible : Visibility.Hidden;
+        _playGlyph.Text = view.Playing ? "\uE769" : "\uE768";
+        bool timed = song && view.Duration > TimeSpan.Zero;
+        _time.Text = timed ? $"{Clock(view.Position)} / {Clock(view.Duration)}" : "";
+        _mapHost.Visibility = timed ? Visibility.Visible : Visibility.Hidden;
+        _mapHost.Cursor = view.CanSeek ? Cursors.Hand : null;
+        if (!timed)
+        {
+            return;
+        }
+
+        string key = $"{view.Song}|{view.Duration}|{view.Lines.Count}";
+        if (key != _mapKey)
+        {
+            _mapKey = key;
+            BuildMap(view);
+        }
+        PaintMap(view.Position);
+    }
+
+    /// <summary>Sözlü her satır bir parça, sonraki satıra (boş satır ara demek) ya da şarkının sonuna kadar.</summary>
+    private void BuildMap(LyricsView view)
+    {
+        foreach (MapPart part in _mapParts)
+        {
+            _map.Children.Remove(part.Back);
+        }
+        _mapParts.Clear();
+
+        IReadOnlyList<LyricLine> lines = view.Lines;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Text.Length == 0 || lines[i].At >= view.Duration)
+            {
+                continue;
+            }
+
+            TimeSpan end = i + 1 < lines.Count && lines[i + 1].At < view.Duration ? lines[i + 1].At : view.Duration;
+            AddPart(lines[i].At, end, lines[i].Text);
+        }
+        if (_mapParts.Count == 0)
+        {
+            AddPart(TimeSpan.Zero, view.Duration, null);
+        }
+        LayoutMap();
+    }
+
+    private void AddPart(TimeSpan start, TimeSpan end, string? text)
+    {
+        var fill = new Border { HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(3), Width = 0 };
+        var back = new Border { Height = MapLine, CornerRadius = new CornerRadius(3), Background = (Brush)FindResource("LyricsStageMap"), Child = fill };
+        _map.Children.Add(back);
+        _mapParts.Add(new MapPart(start, end, text, back, fill));
+    }
+
+    private void LayoutMap()
+    {
+        double width = _map.ActualWidth;
+        double total = _view?.Duration.TotalSeconds ?? 0;
+        if (width <= 0 || total <= 0)
+        {
+            return;
+        }
+
+        foreach (MapPart part in _mapParts)
+        {
+            double left = part.Start.TotalSeconds / total * width;
+            double right = part.End.TotalSeconds / total * width;
+            Canvas.SetLeft(part.Back, left);
+            part.Back.Width = Math.Max(MapLine, right - left - MapGap);
+        }
+        PaintMap(_view!.Position);
+    }
+
+    /// <summary>Geçen parçalar soluk renkte, o anki parça kendi içinde dolar; baş çizgisi tam konumda.</summary>
+    private void PaintMap(TimeSpan position)
+    {
+        double width = _map.ActualWidth;
+        double total = _view?.Duration.TotalSeconds ?? 0;
+        if (width <= 0 || total <= 0)
+        {
+            return;
+        }
+
+        foreach (MapPart part in _mapParts)
+        {
+            double share = Math.Clamp((position - part.Start).TotalSeconds / (part.End - part.Start).TotalSeconds, 0, 1);
+            part.Fill.Width = part.Back.Width * share;
+            part.Fill.Background = share >= 1 ? _accentPast : _accent;
+        }
+        Canvas.SetLeft(_head, Math.Clamp(position.TotalSeconds / total, 0, 1) * width - _head.Width / 2);
+    }
+
+    /// <summary>Haritada imlecin altındaki an ve (varsa) sözlü parça.</summary>
+    private (TimeSpan At, MapPart? Part) MapPoint(MouseEventArgs e)
+    {
+        double width = _map.ActualWidth;
+        double total = _view?.Duration.TotalSeconds ?? 0;
+        double x = e.GetPosition(_map).X;
+        var at = TimeSpan.FromSeconds(Math.Clamp(width > 0 ? x / width : 0, 0, 1) * total);
+        MapPart? part = _mapParts.FirstOrDefault(candidate => candidate.Text != null && at >= candidate.Start && at < candidate.End);
+        return (at, part);
+    }
+
+    private void MapHost_MouseMove(object sender, MouseEventArgs e)
+    {
+        (_, MapPart? part) = MapPoint(e);
+        if (part == null || _view == null)
+        {
+            Fade(_tip, 0, 120);
+            return;
+        }
+
+        if (_tipText.Text != part.Text)
+        {
+            _tipText.Text = part.Text;
+        }
+        _tip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+        // Balon parçanın ortasında, ekrandan taşmadan.
+        double middle = SideMargin + (part.Start + part.End).TotalSeconds / 2 / _view.Duration.TotalSeconds * _map.ActualWidth;
+        double widest = Math.Max(SideMargin, ActualWidth - SideMargin - _tip.DesiredSize.Width);
+        _tip.Margin = new Thickness(Math.Clamp(middle - _tip.DesiredSize.Width / 2, SideMargin, widest), 0, 0, MapBottom + 22);
+        Fade(_tip, 1, 120);
+    }
+
+    private void MapHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_view is not { CanSeek: true })
+        {
+            return;
+        }
+
+        (TimeSpan at, MapPart? part) = MapPoint(e);
+        _commands.Seek(part == null ? at : part.Start > LineLeadIn ? part.Start - LineLeadIn : TimeSpan.Zero);
+        e.Handled = true;
+    }
+
+    private static string Clock(TimeSpan time)
+    {
+        int seconds = (int)Math.Max(0, time.TotalSeconds);
+        return $"{seconds / 60}:{seconds % 60:00}";
+    }
+
     /// <summary>Ayar değişti: çerçeve yeniden kurulur.</summary>
     public void SetFrame(int frameStyle)
     {
@@ -233,6 +676,8 @@ internal sealed class LyricsStage : Window
 
         _frameStyle = frameStyle;
         LayoutFrame();
+        _frame.OpacityMask = null;
+        FadeEffectEdge(TimeSpan.Zero);
     }
 
     /// <summary>

@@ -15,8 +15,9 @@ internal sealed record LyricsPlace(System.Drawing.Rectangle Island, AppBarEdge E
 /// <summary>
 /// Sözler kipi (Alt + S tekerleğindeki Sözler, kullanıcının seçimi): açıkken Spotify'da çalan şarkının zamanlı sözleri
 /// adanın üstündeki altyazıda (<see cref="LyricsBand"/>), o anki satır ve sıradaki. Çeviri kipi gibi kapatılana kadar
-/// açık kalır, uygulama yeniden başlayınca kapalı başlar. Spotify'a hiçbir şey gönderilmez: Windows'un medya bilgisi
-/// yalnızca okunur (ad, sanatçı, albüm, süre, konum).
+/// açık kalır, uygulama yeniden başlayınca kapalı başlar. Windows'un medya bilgisi okunur (ad, sanatçı, albüm, süre,
+/// konum); Spotify'a giden tek şey ikinci ekrandaki sahnenin düğmeleri (oynat / duraklat, atla, sar), Windows'un medya
+/// denetimiyle (hızlı ayarlardaki medya kartı gibi).
 /// Konum: Spotify konumu yalnızca çalma, duraklatma ve atlamada bildiriyor; arası bildirilen andan bu yana geçen süreyle
 /// hesaplanır.
 /// </summary>
@@ -46,6 +47,9 @@ internal sealed class LyricsMode
     private DateTime _problemUntil;
     private TimeSpan _position;
     private DateTimeOffset _positionAt;
+    private TimeSpan _start;
+    private TimeSpan _duration;
+    private bool _canSeek;
     private bool _isPlaying;
     private string? _retryFor;
     private int _retries;
@@ -247,9 +251,13 @@ internal sealed class LyricsMode
         try
         {
             GlobalSystemMediaTransportControlsSessionTimelineProperties timeline = session.GetTimelineProperties();
-            _position = timeline.Position;
+            GlobalSystemMediaTransportControlsSessionPlaybackInfo playback = session.GetPlaybackInfo();
+            _start = timeline.StartTime;
+            _duration = timeline.EndTime - timeline.StartTime;
+            _position = timeline.Position - timeline.StartTime;
             _positionAt = timeline.LastUpdatedTime;
-            _isPlaying = session.GetPlaybackInfo().PlaybackStatus == PlaybackStatus.Playing;
+            _isPlaying = playback.PlaybackStatus == PlaybackStatus.Playing;
+            _canSeek = playback.Controls.IsPlaybackPositionEnabled && _duration > TimeSpan.Zero;
         }
         catch (COMException)
         {
@@ -386,7 +394,8 @@ internal sealed class LyricsMode
     {
         if (_stage == null)
         {
-            _stage = new LyricsStage(screen.Bounds, FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers, () => SetOn(false));
+            _stage = new LyricsStage(screen.Bounds, FrameStyleOf?.Invoke() ?? LyricsStage.FrameChasers,
+                new LyricsCommands(PlayPause, Previous, Next, Seek, () => SetOn(false)));
             _stage.Show();
         }
 
@@ -405,7 +414,15 @@ internal sealed class LyricsMode
             (int index, TimeSpan length) = Current(_lyrics.Lines);
             IReadOnlyList<LyricLine> lines = _lyrics.Lines;
             string text = index < 0 ? _songTitle : lines[index].Text.Length > 0 ? lines[index].Text : "• • •";
-            view = new LyricsView($"{_trackKey}#{index}", text, NextText(lines, index + 1), length, _songTitle, _artist, _cover, _accent, null, _isPlaying);
+            view = new LyricsView($"{_trackKey}#{index}", text, NextText(lines, index + 1), length, _songTitle, _artist, _cover, _accent, null, _isPlaying)
+            {
+                Lines = lines
+            };
+        }
+
+        if (_playing != null && _trackKey != null)
+        {
+            view = view with { Song = _trackKey, Position = Position(), Duration = _duration, CanSeek = _canSeek };
         }
         _stage.Update(view);
     }
@@ -413,11 +430,7 @@ internal sealed class LyricsMode
     /// <summary>O anki satırın sırası (girişte -1) ve süresi (sıradaki satıra kadar).</summary>
     private (int Index, TimeSpan Length) Current(IReadOnlyList<LyricLine> lines)
     {
-        TimeSpan now = _position + Lead;
-        if (_isPlaying)
-        {
-            now += DateTimeOffset.Now - _positionAt;
-        }
+        TimeSpan now = Position() + Lead;
 
         int index = -1;
         for (int i = 0; i < lines.Count && lines[i].At <= now; i++)
@@ -428,6 +441,63 @@ internal sealed class LyricsMode
         TimeSpan start = index < 0 ? TimeSpan.Zero : lines[index].At;
         TimeSpan end = index + 1 < lines.Count ? lines[index + 1].At : start + TimeSpan.FromSeconds(4);
         return (index, end - start);
+    }
+
+    /// <summary>Şarkıdaki konum: bildirilen konum ve çalıyorsa o andan bu yana geçen süre.</summary>
+    private TimeSpan Position()
+    {
+        TimeSpan now = _position;
+        if (_isPlaying)
+        {
+            now += DateTimeOffset.Now - _positionAt;
+        }
+        return _duration > TimeSpan.Zero && now > _duration ? _duration : now;
+    }
+
+    private async void PlayPause()
+    {
+        await Command(session => session.TryTogglePlayPauseAsync().AsTask());
+    }
+
+    private async void Previous()
+    {
+        await Command(session => session.TrySkipPreviousAsync().AsTask());
+    }
+
+    private async void Next()
+    {
+        await Command(session => session.TrySkipNextAsync().AsTask());
+    }
+
+    /// <summary>Konum hemen burada da değişir: Spotify yeni konumu bildirene kadar satır eskisinde kalmasın.</summary>
+    private async void Seek(TimeSpan target)
+    {
+        if (!_canSeek)
+        {
+            return;
+        }
+
+        target = target < TimeSpan.Zero ? TimeSpan.Zero : target > _duration ? _duration : target;
+        _position = target;
+        _positionAt = DateTimeOffset.Now;
+        await Command(session => session.TryChangePlaybackPositionAsync((_start + target).Ticks).AsTask());
+    }
+
+    private async Task Command(Func<MediaSession, Task<bool>> send)
+    {
+        if (_playing is not { } session)
+        {
+            return;
+        }
+
+        try
+        {
+            await send(session);
+        }
+        catch (COMException)
+        {
+            // Spotify kapanıyor.
+        }
     }
 
     private (string Current, string Next) Lines()
