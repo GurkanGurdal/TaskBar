@@ -161,6 +161,10 @@ public partial class BarWindow : AppBarWindow
     private readonly ListCollectionView? _trayBattery;
     private readonly ListCollectionView? _trayOthers;
     private IntPtr _windowsTray;
+    private bool _awaitingBatteryIcon;
+
+    /// <summary>Açılıştan (ya da Explorer yeniden başlayınca) sonra pil simgesine bakılan aralar, saniye.</summary>
+    private static readonly int[] BatteryIconChecks = [8, 15, 30, 60];
     private bool _startMenuWasOpen;
     private readonly ObservableCollection<TaskGroup> _taskGroups = new();
     private int _wheelRemainder;
@@ -468,6 +472,7 @@ public partial class BarWindow : AppBarWindow
             Clock.Effect = null;
         }
         _ = WarmPopupsAsync();
+        _ = AwaitBatteryIconAsync();
     }
 
     private void GlassHost_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -1308,6 +1313,52 @@ public partial class BarWindow : AppBarWindow
             _shellManager.Tasks.Dispose();
             _shellManager.Tasks.Initialize(true);
         }
+        _ = AwaitBatteryIconAsync();
+    }
+
+    /// <summary>
+    /// Pil simgesi Explorer'ın içinden (stobject) eklenir. Oturum açılışında Explorer'la yarışınca simge Explorer'ın
+    /// tepsisine kaydolur, bize hiç gelmez; TaskbarCreated yayını onu yeniden ekletir. Bilgisayarda pil varken simge
+    /// birkaç kontrolde hâlâ yoksa yayın yinelenir (uygulamalar ikonlarını yeniden ekler, ManagedShell çiftleri birleştirir).
+    /// </summary>
+    private async Task AwaitBatteryIconAsync()
+    {
+        if (!Screen.Primary || _awaitingBatteryIcon)
+        {
+            return;
+        }
+
+        _awaitingBatteryIcon = true;
+        try
+        {
+            foreach (int seconds in BatteryIconChecks)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(seconds));
+                if (AllowClose || !IsLoaded || HasBatteryIcon() || !HasSystemBattery())
+                {
+                    return;
+                }
+
+                ManagedShell.Common.Logging.ShellLogger.Info("BarWindow: pil simgesi yok, TaskbarCreated yeniden yayınlanıyor");
+                NativeMethods.SendNotifyMessage(NativeMethods.HWND_BROADCAST, (uint)TaskbarCreatedMessage, UIntPtr.Zero, IntPtr.Zero);
+            }
+        }
+        finally
+        {
+            _awaitingBatteryIcon = false;
+        }
+    }
+
+    private bool HasBatteryIcon()
+    {
+        return _notificationArea.TrayIcons.OfType<NotifyIcon>().Any(IsBatteryIcon);
+    }
+
+    private static bool HasSystemBattery()
+    {
+        var power = System.Windows.Forms.SystemInformation.PowerStatus;
+        return (power.BatteryChargeStatus & System.Windows.Forms.BatteryChargeStatus.NoSystemBattery) == 0
+            && power.BatteryChargeStatus != System.Windows.Forms.BatteryChargeStatus.Unknown;
     }
     #endregion
 
